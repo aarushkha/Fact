@@ -1,0 +1,9 @@
+# MOCK whitelist used only when MOCK_MODE=true. All publishers and domains are fictional.
+sources:
+  - {name: "Nashik City Police (MOCK)", domain: police-nashik.mock.example, language: mr, tier: 1, kind: police}
+  - {name: "Maharashtra Govt Press Office (MOCK)", domain: gov-mh.mock.example, language: mr, tier: 1, kind: government}
+  - {name: "Mumbai Airport Authority (MOCK)", domain: airport-mumbai.mock.example, language: en, tier: 1, kind: institution}
+  - {name: "National Wire Service (MOCK)", domain: wire.mock.example, language: en, tier: 1, kind: wire}
+  - {name: "Daily Reporter (MOCK)", domain: daily-reporter.mock.example, language: en, tier: 2, kind: outlet}
+  - {name: "FactCheck Desk (MOCK)", domain: factcheck-desk.mock.example, language: en, tier: 2, kind: factchecker}
+  - {name: "Viral Aggregator (MOCK)", domain: viral-agg.mock.example, language: hi, tier: 3, kind: aggregator}

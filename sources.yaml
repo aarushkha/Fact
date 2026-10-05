@@ -1,0 +1,36 @@
+# Whitelist of evidence sources. ONLY these count as evidence.
+#
+# tier: 1 = primary (police, courts, government, institutions, wire services)
+#       2 = original reporting (outlets doing their own reporting, fact-checkers)
+#       3 = aggregator (outlets that mostly repeat social-media posts)
+# kind: police | court | government | institution | wire | outlet | factchecker | aggregator
+# rss_url / sitemap_url: real feed URLs only; leave empty if unknown. Do not guess.
+# todo: true -> entry is ignored until filled in.
+
+sources:
+  - name: TODO primary source (e.g. a city police press page)
+    domain: todo-primary.invalid
+    rss_url:
+    sitemap_url:
+    language: mr
+    tier: 1
+    kind: police
+    todo: true
+
+  - name: TODO original-reporting outlet
+    domain: todo-outlet.invalid
+    rss_url:
+    sitemap_url:
+    language: hi
+    tier: 2
+    kind: outlet
+    todo: true
+
+  - name: TODO fact-checker
+    domain: todo-factchecker.invalid
+    rss_url:
+    sitemap_url:
+    language: en
+    tier: 2
+    kind: factchecker
+    todo: true
