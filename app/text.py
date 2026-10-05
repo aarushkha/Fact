@@ -1,0 +1,45 @@
+"""Small, dependency-free text helpers shared by stages and mocks."""
+
+from __future__ import annotations
+
+import hashlib
+import re
+
+# \w alone splits Devanagari words at vowel signs (combining marks), so include the block explicitly.
+_WORD_RE = re.compile(r"[\w\u0900-\u0963\u0966-\u097F]+", re.UNICODE)  # excludes the danda punctuation marks
+_SENT_RE = re.compile(r"(?<=[.!?।])\s+")
+
+STOPWORDS = frozenset(
+    """a an the and or but if of to in on at by for with from as is are was were be been being this that these
+    those it its into over under than then there their they them he she his her we our you your i me my not no
+    so such can could would should will shall may might must do does did done has have had having said says say
+    all any some more most other also just only very about after before during while up down out off""".split()
+)
+
+
+def tokens(text: str) -> list[str]:
+    return [t for t in (w.lower() for w in _WORD_RE.findall(text)) if len(t) > 2 and t not in STOPWORDS]
+
+
+def content_words(text: str) -> set[str]:
+    return set(tokens(text))
+
+
+def overlap_ratio(query: str, doc: str) -> float:
+    """Share of the query's content words found in doc (0-1)."""
+    q = content_words(query)
+    if not q:
+        return 0.0
+    return len(q & content_words(doc)) / len(q)
+
+
+def sentences(text: str) -> list[str]:
+    return [s.strip() for s in _SENT_RE.split(text.strip()) if s.strip()]
+
+
+def source_id_for(url: str) -> str:
+    return "src_" + hashlib.sha1(url.encode("utf-8")).hexdigest()[:10]
+
+
+def has_devanagari(text: str) -> bool:
+    return any("ऀ" <= ch <= "ॿ" for ch in text)

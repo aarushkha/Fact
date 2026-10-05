@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fact test console</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #5d6677; --border: #d9dde4;
+    --accent: #2f5bd3; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ok: #1d7a46; --bad: #b42318; --warn: #a15c00; --wait: #5b5f97; --none: #6b7280;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161b; --panel: #1c1f26; --text: #e6e8ee; --muted: #9aa3b2; --border: #2e333d;
+      --accent: #7a9cff; --ok: #4cc38a; --bad: #ff7b72; --warn: #e3a447; --wait: #a5a9e8; --none: #9aa3b2; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  label { display: block; font-weight: 600; font-size: 13px; margin: 0 0 6px; }
+  textarea, input[type=datetime-local] { width: 100%; font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  textarea { min-height: 96px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 9px 18px; cursor: pointer;
+    background: var(--accent); color: #fff; margin-top: 14px; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); padding: 5px 12px; margin: 0; font-size: 13px; }
+  button:disabled { opacity: .55; cursor: progress; }
+  #preview { max-height: 120px; margin-top: 8px; border-radius: 6px; display: none; }
+  #events { font-family: var(--mono); font-size: 12px; max-height: 180px; overflow: auto; margin: 0; white-space: pre-wrap; }
+  #events .ev { color: var(--accent); font-weight: 600; }
+  .claim { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; background: var(--panel); }
+  .claim .top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .badge { font-size: 11px; font-weight: 700; letter-spacing: .03em; padding: 3px 8px; border-radius: 999px; border: 1px solid currentColor; }
+  .CONFIRMED { color: var(--ok); } .CONTRADICTED { color: var(--bad); } .MISLEADING_CONTEXT { color: var(--warn); }
+  .UNVERIFIED_TOO_EARLY { color: var(--wait); } .UNVERIFIED_EVIDENCE_MISSING, .NOT_CHECKABLE, .pending { color: var(--none); }
+  .meta { color: var(--muted); font-size: 12px; }
+  .orig { font-weight: 600; }
+  .en { color: var(--muted); font-size: 13px; }
+  .summary { margin: 10px 0 0; padding-left: 18px; }
+  .cite { font-size: 12px; margin-left: 4px; }
+  .cite a { color: var(--accent); text-decoration: none; margin-right: 4px; }
+  .cite a:hover { text-decoration: underline; }
+  .checklist { list-style: none; padding: 0; margin: 10px 0 0; font-size: 13px; }
+  .checklist li::before { content: "\2610  "; color: var(--muted); }
+  .checklist li.found::before { content: "\2611  "; color: var(--ok); }
+  .wci { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .nosum { font-size: 13px; color: var(--muted); margin-top: 8px; font-style: italic; }
+  #versions { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-word; }
+  #raw { font-family: var(--mono); font-size: 12px; max-height: 420px; overflow: auto; background: var(--bg);
+    border-radius: 8px; padding: 10px; display: none; white-space: pre-wrap; word-break: break-word; }
+  .err { color: var(--bad); }
+  .hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .hdr h2 { font-size: 15px; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fact test console</h1>
+  <p class="sub">Statuses describe the evidence found, not reality. <span id="mode"></span></p>
+
+  <form id="form" class="panel">
+    <label for="text">Paste text</label>
+    <textarea id="text" name="text" placeholder="Paste a post in Marathi, Hindi, Hinglish or English…"></textarea>
+    <div class="row">
+      <div>
+        <label for="image">…or upload a screenshot</label>
+        <input id="image" name="image" type="file" accept="image/*">
+        <img id="preview" alt="Screenshot preview">
+      </div>
+      <div>
+        <label for="post_date">Post date (optional)</label>
+        <input id="post_date" name="post_date" type="datetime-local">
+        <div class="hint">Separates “too early” from “evidence missing”. Overrides any date read from the screenshot.</div>
+      </div>
+    </div>
+    <button id="submit" type="submit">Check</button>
+  </form>
+
+  <section class="panel">
+    <div class="hdr"><h2>Events</h2></div>
+    <pre id="events"></pre>
+  </section>
+
+  <section id="claims"></section>
+
+  <section class="panel">
+    <div class="hdr">
+      <h2>Debug</h2>
+      <button id="toggleRaw" class="secondary" type="button">Show raw JSON</button>
+    </div>
+    <div id="versions">model versions: –</div>
+    <pre id="raw"></pre>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const safeUrl = (u) => /^https?:\/\//i.test(u || "") ? u : "#";
+
+let sourcesById = {};
+let rawEvents = [];
+let finalResponse = null;
+let claimMeta = {};
+
+fetch("/api/health").then(r => r.json()).then(h => {
+  $("mode").textContent = h.mock_mode ? "Running in MOCK_MODE." : "";
+  $("versions").textContent = "model versions: " + fmtVersions(h.model_versions);
+}).catch(() => {});
+
+function fmtVersions(v) { return Object.entries(v || {}).map(([k, x]) => `${k}=${x}`).join("  ·  "); }
+
+$("image").addEventListener("change", () => {
+  const f = $("image").files[0];
+  const img = $("preview");
+  if (f) { img.src = URL.createObjectURL(f); img.style.display = "block"; } else { img.style.display = "none"; }
+});
+
+$("toggleRaw").addEventListener("click", () => {
+  const raw = $("raw");
+  const show = raw.style.display !== "block";
+  raw.style.display = show ? "block" : "none";
+  $("toggleRaw").textContent = show ? "Hide raw JSON" : "Show raw JSON";
+  renderRaw();
+});
+
+function renderRaw() {
+  $("raw").textContent = JSON.stringify(finalResponse ?? rawEvents, null, 2);
+}
+
+function logEvent(name, data) {
+  const line = document.createElement("div");
+  const brief = name === "evidence" ? `${data.claim_id}: ${data.passages.length} passage(s)`
+    : name === "verdict" ? `${data.claim_id}: ${data.claim.status} (${data.claim.confidence})`
+    : name === "cache_hit" ? `${data.claim_id}: ${data.kind}${data.rating ? " · " + data.rating : ""}`
+    : name === "claims_extracted" ? `${data.claims.length} claim(s), languages=${data.languages.join(",")}`
+    : name === "done" ? `check_id=${data.check_id}`
+    : name === "error" ? data.message : "";
+  line.innerHTML = `<span class="ev">${esc(name)}</span> ${esc(brief)}`;
+  if (name === "error") line.classList.add("err");
+  $("events").appendChild(line);
+  $("events").scrollTop = $("events").scrollHeight;
+}
+
+function cardId(cid) { return "claim-" + cid; }
+
+function renderPending(c) {
+  const el = document.createElement("div");
+  el.className = "claim";
+  el.id = cardId(c.claim_id);
+  el.innerHTML = `<div class="top"><span class="badge pending">CHECKING…</span><span class="meta">${esc(c.type)}</span></div>
+    <div class="orig">${esc(c.text_original)}</div>
+    ${c.text_en !== c.text_original ? `<div class="en">${esc(c.text_en)}</div>` : ""}
+    <div class="status-line meta"></div>`;
+  $("claims").appendChild(el);
+}
+
+function citeLinks(ids) {
+  return ids.map((id, i) => {
+    const s = sourcesById[id];
+    if (!s) return `<span>[${esc(id)}]</span>`;
+    return `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener noreferrer"
+      title="${esc(s.url)}">[${esc(s.publisher)} · tier ${esc(s.tier)}]</a>`;
+  }).join("");
+}
+
+function renderClaim(cid, claim) {
+  let el = $(cardId(cid));
+  if (!el) { el = document.createElement("div"); el.id = cardId(cid); $("claims").appendChild(el); }
+  el.className = "claim";
+  const summary = claim.summary.length
+    ? `<ol class="summary">${claim.summary.map(s => `<li>${esc(s.sentence)}<span class="cite">${citeLinks(s.sources)}</span></li>`).join("")}</ol>`
+    : `<div class="nosum">No verified summary — status only.</div>`;
+  const checklist = claim.expected_evidence.length
+    ? `<ul class="checklist">${claim.expected_evidence.map(e => `<li class="${e.found ? "found" : ""}">${esc(e.item)}</li>`).join("")}</ul>` : "";
+  const via = claimMeta[cid] ? ` · via ${esc(claimMeta[cid])}` : "";
+  el.innerHTML = `<div class="top">
+      <span class="badge ${esc(claim.status)}">${esc(claim.status.replaceAll("_", " "))}</span>
+      <span class="meta">confidence ${Number(claim.confidence).toFixed(2)} · ${esc(claim.type)}${via}</span></div>
+    <div class="orig">${esc(claim.text_original)}</div>
+    ${claim.text_en !== claim.text_original ? `<div class="en">${esc(claim.text_en)}</div>` : ""}
+    ${summary}${checklist}
+    ${claim.would_change_if ? `<div class="wci"><strong>Would change if:</strong> ${esc(claim.would_change_if)}</div>` : ""}`;
+}
+
+function handle(name, data) {
+  rawEvents.push({event: name, data});
+  logEvent(name, data);
+  if (name === "claims_extracted") {
+    data.claims.forEach(renderPending);
+  } else if (name === "cache_hit") {
+    claimMeta[data.claim_id] = data.kind === "cache" ? "cached verdict" : `fact-check (${data.publisher})`;
+  } else if (name === "evidence") {
+    const el = $(cardId(data.claim_id));
+    if (el) el.querySelector(".status-line").textContent = `${data.passages.length} whitelisted passage(s) retrieved, judging…`;
+  } else if (name === "verdict") {
+    (data.sources || []).forEach(s => sourcesById[s.id] = s);
+    renderClaim(data.claim_id, data.claim);
+  } else if (name === "done") {
+    finalResponse = data;
+    data.sources.forEach(s => sourcesById[s.id] = s);
+    $("versions").textContent = "model versions: " + fmtVersions(data.model_versions)
+      + (data.recheck_at ? `  ·  recheck_at=${data.recheck_at}` : "");
+  }
+  renderRaw();
+}
+
+function parseSSE(buffer, onEvent) {
+  const blocks = buffer.split("\n\n");
+  const rest = blocks.pop();
+  for (const block of blocks) {
+    let name = "message", data = "";
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) name = line.slice(6).trim();
+      else if (line.startsWith("data:")) data += line.slice(5).trim();
+    }
+    if (data) onEvent(name, JSON.parse(data));
+  }
+  return rest;
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData();
+  const text = $("text").value.trim();
+  const file = $("image").files[0];
+  if (!text && !file) { alert("Paste text or choose a screenshot."); return; }
+  if (text) fd.append("text", text);
+  if (file) fd.append("image", file);
+  // datetime-local is the browser's local time; send it with an explicit offset.
+  if ($("post_date").value) fd.append("post_date", new Date($("post_date").value).toISOString());
+
+  $("events").innerHTML = ""; $("claims").innerHTML = "";
+  sourcesById = {}; rawEvents = []; finalResponse = null; claimMeta = {};
+  $("submit").disabled = true;
+  try {
+    const res = await fetch("/api/check/stream", {method: "POST", body: fd});
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({detail: res.statusText}));
+      handle("error", {message: `${res.status}: ${JSON.stringify(body.detail)}`});
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buf = parseSSE(buf + decoder.decode(value, {stream: true}), handle);
+    }
+  } catch (err) {
+    handle("error", {message: String(err)});
+  } finally {
+    $("submit").disabled = false;
+  }
+});
+</script>
+</body>
+</html>

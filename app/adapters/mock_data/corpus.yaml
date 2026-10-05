@@ -1,0 +1,49 @@
+# MOCK evidence corpus. Fictional events, fictional publishers.
+# random-blog.mock.example is deliberately NOT whitelisted (tests the whitelist filter).
+passages:
+  - id: psg_bridge_police
+    url: https://police-nashik.mock.example/press/2026-09-27-footbridge
+    published_at: 2026-09-27T19:30:00+05:30
+    language: en
+    text: >-
+      Nashik City Police confirmed that a section of the old footbridge over the Godavari river
+      collapsed on Sunday evening. Three people suffered minor injuries and were taken to the civil hospital.
+  - id: psg_bridge_police_mr
+    url: https://police-nashik.mock.example/press/2026-09-27-footbridge-mr
+    published_at: 2026-09-27T19:45:00+05:30
+    language: mr
+    text: >-
+      नाशिक शहर पोलिसांनी गोदावरी नदीवरील जुन्या पादचारी पुलाचा भाग रविवारी संध्याकाळी कोसळल्याची पुष्टी केली.
+  - id: psg_bridge_daily
+    url: https://daily-reporter.mock.example/nashik/footbridge-collapse
+    published_at: 2026-09-28T08:00:00+05:30
+    language: en
+    text: >-
+      A portion of the Godavari footbridge in Nashik collapsed on Sunday, police said.
+      Three people were injured in the collapse.
+  - id: psg_airport_authority
+    url: https://airport-mumbai.mock.example/notices/operations-normal
+    published_at: 2026-10-02T10:00:00+05:30
+    language: en
+    text: >-
+      Mumbai airport is operating normally. Reports that Mumbai airport is closed for a week are false.
+      All flights are running as scheduled.
+  - id: psg_airport_viral
+    url: https://viral-agg.mock.example/trending/mumbai-airport-closed
+    published_at: 2026-10-02T09:00:00+05:30
+    language: en
+    text: >-
+      Mumbai airport closed for a week, say viral posts. Passengers are sharing the message widely.
+  - id: psg_flood_wire
+    url: https://wire.mock.example/factfile/kolhapur-flood-video
+    published_at: 2026-10-01T12:00:00+05:30
+    language: en
+    text: >-
+      The video of flooded streets in Kolhapur shared as footage from this week is old footage
+      from the 2019 floods, not from this week.
+  - id: psg_metro_blog
+    url: https://random-blog.mock.example/pune-metro-collapse
+    published_at: 2026-10-03T12:00:00+05:30
+    language: en
+    text: >-
+      Pune metro bridge collapsed this morning and many people were hurt, sources say.

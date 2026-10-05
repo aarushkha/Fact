@@ -1,0 +1,20 @@
+# MOCK Google Fact Check Tools results.
+hits:
+  - claim_text: The state government is giving free laptops to all college students
+    claimant: Social media posts
+    review_url: https://factcheck-desk.mock.example/2026/09/free-laptop-scheme-false
+    review_title: No, the state government has not announced free laptops for all college students
+    publisher_name: FactCheck Desk (MOCK)
+    publisher_site: factcheck-desk.mock.example
+    textual_rating: "False"
+    review_date: 2026-09-20T10:00:00+05:30
+    language: en
+  - claim_text: Pune metro bridge collapsed this morning
+    claimant: Social media posts
+    review_url: https://unlisted-checker.mock.example/pune-metro
+    review_title: Pune metro collapse claim is fake
+    publisher_name: Unlisted Checker (MOCK, not whitelisted)
+    publisher_site: unlisted-checker.mock.example
+    textual_rating: "Fake"
+    review_date: 2026-10-03T15:00:00+05:30
+    language: en
