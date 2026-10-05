@@ -58,7 +58,8 @@ async def test_mock_run_over_dataset(settings, adapters, whitelist):
 
 def test_factcheck_set_is_real_and_guarded():
     rows = load_examples(ROOT_DIR / "eval" / "factchecks.jsonl", "all")
-    assert len(rows) == 200 and not any(r["synthetic"] for r in rows)
+    assert len(rows) >= 200 and not any(r["synthetic"] for r in rows)
+    assert len({r["id"] for r in rows}) == len(rows)  # --append never duplicates a review
     assert all(r["exclude_urls"] == [r["review_url"]] and r["single_claim"] for r in rows)
     assert {r["language"] for r in rows} == {"en", "hi", "mr"}
 
