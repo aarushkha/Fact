@@ -48,3 +48,12 @@ async def test_exclude_urls_removes_labelling_evidence(pipeline):
 async def test_single_claim_skips_extraction(pipeline):
     res = await pipeline.run(CheckInput(text="Mumbai airport is closed for a week. Nashik is beautiful.", single_claim=True))
     assert len(res.claims) == 1
+
+
+async def test_sentence_extractor_never_pairs_misaligned_sentences():
+    # Same sentence count, different boundaries: each original sentence must get its own translation.
+    ex = SentenceExtractor(MockTranslator())
+    out = await ex.extract_claims("नाशिक भारतातील सर्वात सुंदर शहर आहे. ठाण्यात एका केमिकल कारखान्याला आग लागली.",
+                                  "Nashik is beautiful and Thane had a fire. Unrelated second sentence.", ["mr"])
+    assert [c.text_en for c in out] == ["Nashik is the most beautiful city in India.",
+                                        "A fire broke out at a chemical factory in Thane."]

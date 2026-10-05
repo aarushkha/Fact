@@ -1,9 +1,11 @@
 """Gemini-free claim extraction and summary writing (CLAIM_EXTRACTOR=sentences, SUMMARY_WRITER=extractive).
 
-- SentenceExtractor: one claim per sentence; English via the translator (Sarvam) when sentence counts
-  differ. Cruder than LLM extraction (no splitting of compound sentences, heuristic entities).
+- SentenceExtractor: one claim per sentence; a multi-sentence non-English post gets each sentence translated
+  on its own (Sarvam), so claims never pair with a misaligned translation. Cruder than LLM extraction
+  (no splitting of compound sentences, heuristic entities).
 - ExtractiveWriter: quotes, verbatim, the passage sentence most similar to the claim (multilingual
-  embeddings), at most one per passage, up to 3. Cannot hallucinate; NLI still verifies every sentence.
+  embeddings), at most one per passage, up to 3. Cannot hallucinate; NLI still verifies every sentence and,
+  under a "fails" status, drops one that restates the claim (app/pipeline/write.py).
 """
 
 from __future__ import annotations
@@ -24,10 +26,14 @@ class SentenceExtractor:
 
     async def extract_claims(self, text_original: str, text_en: str, languages: list[str]) -> list[RawClaim]:
         orig = sentences(text_original)[:MAX_CLAIMS] or [text_original]
-        en = sentences(text_en)
-        if len(en) != len(orig):
-            primary = languages[0] if languages else "en"
-            en = list(await asyncio.gather(*(self.translator.translate(s, primary) for s in orig))) if primary != "en" else orig
+        # Never zip independently split texts: equal sentence counts do not mean equal boundaries.
+        if text_en.strip() == text_original.strip():
+            en = orig
+        elif len(orig) == 1:
+            en = [text_en.strip()]
+        else:  # translate each original sentence on its own so every claim keeps its own English
+            source = next((lang for lang in languages if lang != "en"), None)
+            en = list(await asyncio.gather(*(self.translator.translate(s, source) for s in orig))) if source else orig
         return [
             RawClaim(text_original=o, text_en=e, entities=guess_entities(e))
             for o, e in zip(orig, en) if e.strip()
@@ -45,7 +51,7 @@ class ExtractiveWriter:
             return []
         vecs = await self.embedder.embed([claim.text_en] + [s for _, s in candidates])
         best: dict[str, tuple[float, str]] = {}
-        for (p, s), v in zip(candidates, vecs[1:]):
+        for (p, s), v in zip(candidates, vecs[1:], strict=True):
             score = cosine(vecs[0], v)
             if p.id not in best or score > best[p.id][0]:
                 best[p.id] = (score, s)
