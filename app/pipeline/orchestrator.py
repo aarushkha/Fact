@@ -39,7 +39,7 @@ from app.pipeline.normalize import normalize
 from app.pipeline.retrieve import rank_passages, retrieve
 from app.pipeline.write import verify_sentences
 from app.sources import Whitelist
-from app.text import url_key
+from app.text import document_key
 
 log = logging.getLogger("fact.pipeline")
 PIPELINE_VERSION = "pipeline-0.1"
@@ -189,7 +189,7 @@ class Pipeline:
         )
 
         age = claim_age_hours(ingested.post_date, now)
-        excluded = {url_key(u) for u in inp.exclude_urls}
+        excluded = {document_key(u) for u in inp.exclude_urls}
         outcomes = await asyncio.gather(
             *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded, ingested.post_date)
               for c in claims)
@@ -333,7 +333,7 @@ class Pipeline:
             return res, cached.sources
 
         if excluded:  # evaluation leakage guard: drop the evidence that labels this example
-            fc_matches = [m for m in fc_matches if url_key(m.hit.review_url) not in excluded]
+            fc_matches = [m for m in fc_matches if document_key(m.hit.review_url) not in excluded]
         decisive = decisive_factcheck(fc_matches)
         if decisive is not None and decisive.status is not None and s.factcheck_hit_confidence >= s.confidence_threshold:
             await emit("cache_hit", {
@@ -355,7 +355,7 @@ class Pipeline:
             )
             # Whitelisted fact-checks that did not short-circuit still count as evidence.
             passages = rank_passages(passages + [m.passage for m in fc_matches])
-            passages = [p for p in passages if url_key(p.url) not in excluded]
+            passages = [p for p in passages if document_key(p.url) not in excluded]
             await emit("evidence", {"claim_id": cid, "passages": [passage_brief(p) for p in passages]})
 
             # Stage 6: judge.

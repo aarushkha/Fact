@@ -57,3 +57,12 @@ async def test_sentence_extractor_never_pairs_misaligned_sentences():
                                   "Nashik is beautiful and Thane had a fire. Unrelated second sentence.", ["mr"])
     assert [c.text_en for c in out] == ["Nashik is the most beautiful city in India.",
                                         "A fire broke out at a chemical factory in Thane."]
+
+
+def test_document_key_keeps_identifying_query_and_drops_tracking():
+    from app.text import document_key
+
+    a = "https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=63733"
+    assert document_key(a) != document_key(a.replace("63733", "63732"))
+    assert document_key(a + "&utm_source=rss") == document_key(a.replace("https://www.", "http://"))
+    assert document_key("https://x.in/a/amp/?fbclid=1") == document_key("https://x.in/a")
