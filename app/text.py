@@ -72,3 +72,17 @@ def url_key(url: str) -> str:
     host = parts.netloc[4:] if parts.netloc.startswith("www.") else parts.netloc
     path = "/".join(seg for seg in parts.path.split("/") if seg and seg != "amp")
     return f"{host}/{path}"
+
+
+TRACKING_PARAMS = frozenset({"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "ref_src", "amp", "cmpid", "s_cid", "ito"})
+
+
+def document_key(url: str) -> str:
+    """url_key plus the query parameters that identify a document (RBI: ...aspx?prid=63733), minus
+    tracking ones (utm_*, fbclid, ...). For "is this article already stored", where url_key's dropping
+    of the whole query would make every RBI press release look like the same page."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit
+
+    query = [(k, v) for k, v in parse_qsl(urlsplit(url.strip()).query, keep_blank_values=True)
+             if not k.lower().startswith("utm_") and k.lower() not in TRACKING_PARAMS]
+    return url_key(url) + (f"?{urlencode(sorted(query))}" if query else "")

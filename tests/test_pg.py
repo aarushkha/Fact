@@ -234,3 +234,16 @@ async def test_recheck_on_postgres(seeded, settings, whitelist):
     assert rows[0].superseded_at is not None and rows[1].rechecked_from == rows[0].id
     assert post_dates[0] == post_dates[1] == NOW - timedelta(hours=2)
     assert await run_rechecks(pipeline) == []
+
+
+async def test_known_urls_keeps_identifying_query_parameters(db, whitelist):
+    # RBI press releases differ only by ?prid=; tracking parameters must not make a stored URL look new.
+    engine, t = db
+    ids = await sync_sources(engine, t, whitelist)
+    entry = whitelist.lookup("https://wire.mock.example/")
+    (v,) = await MockEmbedder(DIM).embed(["x"])
+    await upsert_document(engine, t, source_id=ids["wire.mock.example"], entry=entry,
+                          url="https://wire.mock.example/show.aspx?prid=1", title="A", language="en", published_at=NOW,
+                          full_text="a", chunks=[ChunkIn("p1", "a", v)], embedding_model="mock-1")
+    feed = ["https://wire.mock.example/show.aspx?prid=1&utm_source=rss", "https://wire.mock.example/show.aspx?prid=2"]
+    assert await known_urls(engine, t, feed, ids["wire.mock.example"]) == {feed[0]}
