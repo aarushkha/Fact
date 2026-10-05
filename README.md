@@ -87,8 +87,8 @@ and per process.
 - `GET /api/monitoring?hours=24` and the `/monitor` page show: checks, statuses and abstain rate,
   per-stage latency and errors, models and fallbacks, NLI deletion rate, rechecks and top cascades.
 - Optional model server: `uvicorn app.model_server:app --port 8001` (or
-  `docker compose --profile models up`) with `MODEL_SERVER_URL` set. The API and worker then don't
-  load torch.
+  `docker compose --profile models up`, which publishes it on 127.0.0.1 only) with `MODEL_SERVER_URL`
+  set. The API and worker then don't load torch. Set `MODEL_SERVER_TOKEN` before exposing it further.
 - Migrations: Alembic (`app/db/migrations`). The app upgrades to head on startup. After changing
   `app/db/tables.py`, run `alembic revision --autogenerate -m "..."`. CI fails on drift (`alembic check`).
 
@@ -107,7 +107,9 @@ These rules are enforced in code (`app/pipeline/judge.py`, `write.py`), not left
   (`SAME_EVENT_THRESHOLD`). Without this, debunks of *other* viral videos (similar wording) were the
   evidence behind most confident errors on real data.
 - Every summary sentence must be entailed by a cited passage according to the NLI check, or it is
-  deleted. If nothing survives, the claim carries a status only.
+  deleted. Under CONTRADICTED or MISLEADING_CONTEXT, a sentence that itself entails the claim
+  (`NLI_RESTATEMENT_THRESHOLD`) is deleted too: it restates the claim, like the quote a debunk opens
+  with. If nothing survives, the claim carries a status only.
 - The cache only reuses definitive verdicts. It requires cosine similarity ≥ threshold, at least one
   shared entity, and the same embedding model.
 
@@ -121,7 +123,9 @@ Each entry has `name`, `domain`, `rss_url` and/or `sitemap_url`, `language`, `ti
 police, courts, government, institutions, wire services; 2 = original reporting and fact-checkers;
 3 = aggregator) and `kind` (police | court | government | institution | wire | outlet | factchecker |
 aggregator). `kind` drives the expected-evidence checklist. Entries with `todo: true` are ignored.
-Use only feed URLs you have confirmed.
+Use only feed URLs you have confirmed. When one source has feeds in several languages, give each
+feed that differs from the entry's `language` as `{url: ..., language: ...}`, so its articles are
+stored with the right language.
 
 ## Crawler
 
@@ -129,11 +133,14 @@ Use only feed URLs you have confirmed.
 python -m crawler.run --dry-run                 # list what would be fetched
 python -m crawler.run                           # all sources (needs DATABASE_URL)
 python -m crawler.run --source example.org --limit 20 --since-days 7
+python -m crawler.run --reindex                 # also re-extract and re-embed already-stored articles
 ```
 
 The crawler only keeps URLs on each source's own domain (also after redirects) and obeys robots.txt.
 It extracts article text with trafilatura, splits it into sentence chunks, embeds them, and stores them
-with url, publisher, tier and published_at. Already-stored URLs are skipped. Search is hybrid: Postgres
+with url, publisher, tier and published_at. Already-stored URLs are skipped unless `--reindex` is
+given (use it after changing chunking, embedding or ClaimReview handling). A feed that fails is logged
+and skipped; the source only fails when all of its feeds and sitemaps do. Search is hybrid: Postgres
 full-text (`simple` + `english`) plus pgvector cosine, queried in both the original language and
 English, fused with RRF.
 
@@ -150,8 +157,10 @@ Each example is scored on its first claim.
 
 The report gives the confident-wrong rate (wrong and not abstained), abstain rate, citation precision
 (the share of written sentences that pass the NLI check), calibration buckets with ECE, and p50/p95
-latency. It writes a per-example CSV and a JSON summary to `eval/out/`. The sweep runs once with
-threshold 0, then replays every threshold exactly.
+latency. It writes a per-example CSV and a JSON summary to `eval/out/`. Examples whose run failed are
+reported as `errors` and left out of every rate. The sweep runs once with threshold 0, then replays
+every threshold exactly; an answer the replay turns into an abstention no longer counts as correct.
+Date-only `post_date` values are read in `TIMEZONE`, as in the app.
 
 **Real fact-check set**: `eval/factchecks.jsonl` holds 200 real claims (en 80, hi 70, mr 50),
 labelled by published fact-checks (Alt News, Factly, Vishvas, BOOM, The Quint, Aaj Tak, Fact

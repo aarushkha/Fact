@@ -32,7 +32,7 @@ RUN_LIVE_TESTS=1 RUN_MODEL_TESTS=1 pytest tests/test_live.py   # real APIs / mod
 python -m eval.run --split all                            # synthetic set (10 rows, all six statuses)
 python -m eval.run --file eval/factchecks.jsonl --split hidden [--ids a,b] [--trace] [--threshold-sweep --target 0.05]
 python -m eval.build_factcheck_set            # rebuild the 200 real labelled rows (Fact Check API key)
-python -m crawler.run [--source d] [--limit n] [--dry-run]
+python -m crawler.run [--source d] [--limit n] [--dry-run] [--reindex]   # --reindex: re-embed stored articles
 python -m app.worker [--once] [--no-crawl]    # rechecks + scheduled crawl
 python -m app.db.migrate                      # upgrade DB to head (app does this at startup)
 alembic revision --autogenerate -m "..."      # after editing app/db/tables.py; CI runs `alembic check`
@@ -54,7 +54,8 @@ Pipeline (`app/pipeline/orchestrator.py` chains the stages; every stage is logge
 
 - `app/pipeline/judge.py`: **the rules live here, in code**. `apply_same_event_gate`,
   `effective_judgments` (best tier only), `decide_status` (evidence guards, threshold, age split).
-- `app/pipeline/write.py`: NLI verification over premise windows (`best_windows`).
+- `app/pipeline/write.py`: NLI verification over premise windows (`best_windows`). Under a "fails"
+  status it also drops sentences that entail the claim (`NLI_RESTATEMENT_THRESHOLD`): restatements.
 - `app/adapters/`: one file per provider. `factory.py` wires them from `Settings`. `mock.py` and
   `mock_data/` hold deterministic, keyword-driven mocks over a fictional corpus (`*.mock.example`).
 - `app/adapters/prompts.py`: all LLM prompts, JSON schemas, and label definitions shared with Jev.
@@ -119,7 +120,16 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
     from the build environment, so there's almost no tier-1 coverage yet. NDTV and RBI block article
     fetches. Alt News and Factly don't embed ClaimReview (Vishvas does); their verdicts come through
     the Google API.
-12. **Build environment.** No Docker daemon (compose validated with `config`, image never built). Local
+12. **A summary can cite its passage and still be wrong.** A debunk usually opens by quoting the
+    claim ("Mumbai airport is closed for a week."). Its passage entails that sentence, so the citation
+    check kept it as the summary of a CONTRADICTED verdict. Under CONTRADICTED / MISLEADING_CONTEXT,
+    NLI now also checks sentence ⇒ claim and drops restatements. The mock NLI is word overlap plus a
+    negation check, so it can tell "is closed" from "is not closed".
+13. **Feeds carry their own language.** Newschecker, Vishvas and Fact Crescendo serve several languages
+    from one domain; a feed whose language differs from its entry is written `{url, language}` in
+    `sources.yaml` (checked against the feed's articles, not just its `<language>` tag: Fact
+    Crescendo's Marathi feed says `en-US`).
+14. **Build environment.** No Docker daemon (compose validated with `config`, image never built). Local
     Postgres 16 + pgvector on port 5433 can stop when the container recycles. Background jobs are capped
     at 1 h (the 200-row eval doesn't fit; use `--ids` / `--limit`). The CPU is slow: BGE crawl ≈ a few
     articles per minute.
