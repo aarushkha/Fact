@@ -65,3 +65,11 @@ async def test_sentence_entailed_by_one_window_of_a_long_passage_survives():
     r = await verify_sentences([d], [long_p], SentenceLevelNLI(), 0.5)
     assert [s.sentence for s in r.kept] == [d.sentence] and r.kept[0].sources == ["src_lp"]
     assert premise_windows("A. B. C.") == ["A. B. C.", "A.", "B.", "C.", "A. B.", "B. C."]
+
+
+def test_best_windows_bounded_and_relevant():
+    from app.pipeline.write import best_windows
+
+    text = " ".join(f"Sentence {i} about topic {i}." for i in range(12)) + " The bridge collapsed in Nashik."
+    w = best_windows(text, "A bridge collapsed in Nashik.")
+    assert len(w) == 4 and w[0] == text and w[1] == "The bridge collapsed in Nashik."

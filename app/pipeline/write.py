@@ -6,9 +6,18 @@ from dataclasses import dataclass, field
 
 from app.adapters.base import NLIVerifier
 from app.models.schemas import DraftSentence, Passage, SummarySentence
-from app.text import sentences
+from app.text import overlap_ratio, sentences
 
 MAX_SENTENCES = 3
+MAX_WINDOWS = 4  # whole passage + the 3 windows that share most words with the sentence
+
+
+def best_windows(passage_text: str, hypothesis: str, k: int = MAX_WINDOWS) -> list[str]:
+    """Bound NLI cost (CPU): the whole passage plus the k-1 windows most lexically similar to the sentence."""
+    windows = premise_windows(passage_text)
+    head, rest = windows[0], windows[1:]
+    rest.sort(key=lambda w: -overlap_ratio(hypothesis, w))
+    return [head, *rest[: k - 1]]
 
 
 def premise_windows(text: str) -> list[str]:
@@ -48,7 +57,7 @@ async def verify_sentences(
             report.dropped.append({"sentence": d.sentence, "reason": "no valid citation"})
             continue
         cited_any.add(i)
-        pairs.extend((i, p, w) for p in cited for w in premise_windows(p.text))
+        pairs.extend((i, p, w) for p in cited for w in best_windows(p.text, d.sentence))
     scores = await nli.score([(w, drafts[i].sentence) for i, _, w in pairs]) if pairs else []
 
     entailing: dict[int, list[Passage]] = {}
