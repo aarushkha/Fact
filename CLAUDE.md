@@ -54,7 +54,7 @@ Pipeline (`app/pipeline/orchestrator.py` chains the stages; every stage is logge
 
 - `app/pipeline/judge.py`: **the rules live here, in code**. `apply_same_event_gate`,
   `effective_judgments` (best tier only), `decide_status` (evidence guards, threshold, age split).
-- `app/pipeline/write.py`: NLI verification over premise windows (`best_windows`). Under a "fails"
+- `app/pipeline/write.py`: English summaries (`to_english`), NLI verification over premise windows (`best_windows`). Under a "fails"
   status it also drops sentences that entail the claim (`NLI_RESTATEMENT_THRESHOLD`): restatements.
 - `app/adapters/`: one file per provider. `factory.py` wires them from `Settings`. `mock.py` and
   `mock_data/` hold deterministic, keyword-driven mocks over a fictional corpus (`*.mock.example`).
@@ -130,8 +130,7 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
     also held real context, so don't lower it blindly), and a claim-label rule ("Claim:", "Claim
     Review :", "दावा:"; 30 more, all true restatements). 25 of those 30 came from our own ClaimReview
     passage, which split as `Claim reviewed: "X". Rating: False.`; it is now one verdict-first sentence
-    (`verdict_sentence`). Marathi summaries are mostly empty even without the guards (6 of 10 rows):
-    citation NLI rarely passes there. The mock NLI is word overlap plus a negation/"is false" check.
+    (`verdict_sentence`). The mock NLI is word overlap plus a negation/"is false" check.
 13. **Feeds carry their own language.** Newschecker, Vishvas and Fact Crescendo serve several languages
     from one domain; a feed whose language differs from its entry is written `{url, language}` in
     `sources.yaml` (checked against the feed's articles, not just its `<language>` tag: Fact
@@ -143,17 +142,24 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
     and retag, and for a local build give the base image the proxy CA (`/root/.ccr/ca-bundle.crt` as
     `PIP_CERT`) in a throwaway base image, never in the repo's Dockerfile. Background jobs are capped
     at 2 h. The CPU is slow: BGE crawl ≈ a few articles per minute; the real eval ≈ 10 s per row.
-15. **Fact-checker disagreement rarely reaches the judge.** Of 200 real rows, only 1 had API reviews that
+15. **mDeBERTa can't do Marathi→Marathi NLI; summaries are English.** A Marathi sentence against itself
+    scored 0.27-0.36 entailment (Hindi 0.59, English 0.94), so every verbatim Marathi quote failed the
+    citation check (6 of 10 Marathi rows had empty summaries). A Marathi passage → English sentence
+    scored 0.68-0.85. So `write.to_english` translates a non-English quote (Sarvam) and NLI checks the
+    English sentence against the *original* passage (windows picked by `source_sentence`). Summaries
+    are always shown in English; a quote whose translation fails is dropped, never shown in Marathi.
+16. **Fact-checker disagreement rarely reaches the judge.** Of 200 real rows, only 1 had API reviews that
     still disagreed after excluding the labelling review, and there the second review fell below the
     0.85 claim-similarity cut, so one review short-circuited alone. On the 12 English rows the eval
     answered definitively, the rule never fired. The C↔M errors that remain are short-circuits where
     *another* fact-checker's rating differs from the excluded label: label noise, not a judging bug.
-16. **NOT_CHECKABLE eats real rumours.** 6 of 23 definitive answers on the real set (and 1 of 10 news
+17. **NOT_CHECKABLE eats real rumours.** 6 of 23 definitive answers on the real set (and 1 of 10 news
     rows) were NOT_CHECKABLE: rumours phrased as a prediction ("X is going to be the new governor"),
     as praise of a video ("player took an incredible catch"), or an attributed quote ("…: Jaishankar").
     The claim-type criteria in `prompts.py` treat the surface form, not the factual core. Fix with an
     A/B on real rows before changing them (see lesson 3).
-17. **Sarvam usage.** Every non-mock check calls Sarvam `text-lid` (and `translate` for hi/mr), so a
+18. **Sarvam usage.** Every non-mock check calls Sarvam `text-lid` (and `translate` for hi/mr, plus `to_english` for
+    non-English summary quotes), so a
     200-row eval is ~300+ Sarvam calls. The owner asked to keep Sarvam usage low: re-run English rows
     with `TRANSLATOR_PROVIDER=llm` (script heuristics, no API call for English) and only run hi/mr rows
     when needed.
@@ -172,11 +178,12 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
 
 Done on 2026-10-05: fact-checker disagreement rule (`decide_status`, ratings also from crawled
 ClaimReview), shared Postgres rate limiter, per-host crawl throttle with Crawl-delay, Docker image job in
-CI, opt-in post-language summaries (`SUMMARY_LANGUAGE=post`), `build_factcheck_set --append` (300 rows),
+CI, opt-in post-language summaries (`SUMMARY_LANGUAGE=post`: the verified English sentence is
+translated into the post's language and re-verified; default `english`), `build_factcheck_set --append` (300 rows),
 `build_news_set` (CONFIRMED rows from two-outlet news), `distinct_accounts_7d` cascade signal, and a tier-1
 re-probe (still blocked; PTI needs a headless browser).
 
-1. **Fix NOT_CHECKABLE on real rumours** (lesson 16): A/B the claim-type criteria on the real rows
+1. **Fix NOT_CHECKABLE on real rumours** (lesson 17): A/B the claim-type criteria on the real rows
    (English first, no Sarvam) and the 10 synthetic rows (opinion/satire/prediction must stay
    NOT_CHECKABLE).
 2. **Finish the full real eval** (it stopped at 171/200 to save Sarvam calls) once the Sarvam budget allows,

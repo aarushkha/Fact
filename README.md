@@ -90,7 +90,8 @@ database it is in-memory and per process. API keys come from the environment, so
   per-stage latency and errors, models and fallbacks, NLI deletion rate, rechecks and top cascades.
 - Optional model server: `uvicorn app.model_server:app --port 8001` (or
   `docker compose --profile models up`, which publishes it on 127.0.0.1 only) with `MODEL_SERVER_URL`
-  set. The API and worker then don't load torch. Set `MODEL_SERVER_TOKEN` before exposing it further.
+  set. The API and worker then don't load torch. Set `MODEL_SERVER_TOKEN` before exposing it further;
+  with a token, a public `MODEL_SERVER_URL` must be `https://` (plain HTTP is allowed only to internal hosts).
 - Migrations: Alembic (`app/db/migrations`). The app upgrades to head on startup. After changing
   `app/db/tables.py`, run `alembic revision --autogenerate -m "..."`. CI fails on drift (`alembic check`).
 
@@ -112,6 +113,9 @@ These rules are enforced in code (`app/pipeline/judge.py`, `write.py`), not left
   deleted. Under CONTRADICTED or MISLEADING_CONTEXT, a sentence that itself entails the claim
   (`NLI_RESTATEMENT_THRESHOLD`) or is labelled as the claim ("Claim: …") is deleted too: it restates
   the claim, like the quote a debunk opens with. If nothing survives, the claim carries a status only.
+- Summaries are always in English. A quote from Marathi or Hindi evidence is translated, and NLI
+  checks the English sentence against the original passage (the NLI model can't compare Marathi with
+  Marathi reliably, but handles Marathi evidence → English sentence well).
   Fact-check passages are stored as one verdict-first sentence (`Fact-check verdict False on the claim
   "…"`); run `python -m crawler.run --reindex` to rewrite passages crawled before this change.
 - The cache only reuses definitive verdicts. It requires cosine similarity ≥ threshold, at least one
@@ -210,10 +214,10 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
    has no TOO_EARLY / NOT_CHECKABLE rows; those come only from the 10 synthetic examples. All thresholds
    in `.env.example` are untuned defaults.
 6. API keys live in `API_KEYS` (no per-key quotas, revocation means a restart). The rate limiter is shared through Postgres.
-7. `SUMMARY_LANGUAGE=post` translates each verified summary sentence into the post's language (Sarvam) and shows it
-   only if it passes NLI against its own passage again; otherwise the verified original stays. Measured on 20 real
-   English evidence sentences: Hindi translations pass 13/20, Marathi 8/20 (originals 15/20), so the default is still
-   `evidence`. Hinglish posts get Devanagari Hindi.
+7. Summaries are English by default. `SUMMARY_LANGUAGE=post` translates each verified English sentence into the
+   post's language (Sarvam) and shows it only if it passes NLI against its own passage again; otherwise the
+   English sentence stays. Measured on 20 real English evidence sentences: Hindi translations pass 13/20, Marathi
+   8/20 (English 15/20), so the default stays `english`. Hinglish posts get Devanagari Hindi.
 8. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
 9. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
     language per text (mixed-language posts are flagged by a heuristic).

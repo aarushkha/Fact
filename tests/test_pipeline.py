@@ -163,3 +163,24 @@ async def test_post_language_summary_stage_runs_and_keeps_verified_sentences(set
     cited = {s.id for s in res.sources}
     assert all(set(s.sources) <= cited for s in res.claims[0].summary)
     assert "localize" in {r.stage for r in store.stage_runs}
+async def test_marathi_summary_draft_is_shown_in_english(settings, adapters, store, whitelist):
+    # A writer that quotes Marathi evidence (as ExtractiveWriter does) must still produce an English summary.
+    import dataclasses
+
+    from app.models.schemas import DraftSentence
+    from app.pipeline.orchestrator import Pipeline
+    from app.text import has_devanagari
+
+    mr = "नाशिक शहर पोलिसांनी गोदावरी नदीवरील जुन्या पादचारी पुलाचा भाग रविवारी संध्याकाळी कोसळल्याची पुष्टी केली."
+
+    class MarathiQuoter(MockLLM):
+        async def write_summary(self, claim, passages, status):
+            return [DraftSentence(sentence=mr, passage_ids=[passages[0].id])]
+
+    pipeline = Pipeline(settings, dataclasses.replace(adapters, llm=MarathiQuoter()), store, whitelist, clock=lambda: NOW)
+    res = await pipeline.run(CheckInput(text="नाशिकमध्ये गोदावरी नदीवरील पादचारी पूल रविवारी कोसळला."))
+    c = res.claims[0]
+    assert c.status == Status.CONFIRMED
+    assert [s.sentence for s in c.summary] == [
+        "Nashik City Police confirmed that part of the old footbridge over the Godavari river collapsed on Sunday evening."]
+    assert not any(has_devanagari(s.sentence) for s in c.summary)

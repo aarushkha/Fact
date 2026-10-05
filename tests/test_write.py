@@ -165,3 +165,72 @@ async def test_translated_summary_must_not_restate_the_claim():
     summary, log = await localize_summary(report, _Translator({"A debunk text.": restated}), _NLI({restated, claim}),
                                           0.5, "mr", claim_text=claim, status="CONTRADICTED")
     assert summary == report.kept and log[0]["reason"] == "restates the claim"
+async def test_marathi_quote_is_shown_in_english_and_verified_against_the_original():
+    from app.adapters.mock import MockTranslator
+    from app.pipeline.write import to_english
+
+    mr_text = "नाशिक शहर पोलिसांनी गोदावरी नदीवरील जुन्या पादचारी पुलाचा भाग रविवारी संध्याकाळी कोसळल्याची पुष्टी केली."
+    p = passage("pmr", text=mr_text).model_copy(update={"language": "mr"})
+    from app.adapters.extractive import ExtractiveWriter
+    from app.adapters.mock import MockEmbedder
+
+    from .helpers import claim
+
+    quoted = await ExtractiveWriter(MockEmbedder(64)).write_summary(claim("A footbridge in Nashik collapsed."), [p], "CONFIRMED")
+    assert [d.sentence for d in quoted] == [mr_text]  # the writer quotes verbatim, in Marathi
+    drafts = await to_english(quoted, [p], MockTranslator())
+    assert drafts[0].sentence.startswith("Nashik City Police confirmed") and drafts[0].source_sentence == mr_text
+    r = await verify_sentences(drafts, [p], MockNLIVerifier(), 0.5, claim_text="A footbridge in Nashik collapsed.",
+                               status="CONFIRMED")
+    assert [s.sentence for s in r.kept] == [drafts[0].sentence]
+
+
+async def test_untranslatable_quote_is_dropped_not_shown_in_marathi():
+    from app.pipeline.write import to_english
+
+    class Down:
+        model_version = "down"
+
+        async def detect(self, text):
+            return ["mr"]
+
+        async def translate(self, text, source, target="en"):
+            raise RuntimeError("translator down")
+
+    p = passage("pmr", text="काहीतरी मराठी वाक्य येथे आहे.").model_copy(update={"language": "mr"})
+    d = DraftSentence(sentence="काहीतरी मराठी वाक्य येथे आहे.", passage_ids=["pmr"])
+    assert await to_english([d], [p], Down()) == []
+
+
+async def test_mock_nli_accepts_a_marathi_sentence_against_itself():
+    mr = "नाशिक शहर पोलिसांनी गोदावरी नदीवरील जुन्या पादचारी पुलाचा भाग रविवारी संध्याकाळी कोसळल्याची पुष्टी केली."
+    (s,) = await MockNLIVerifier().score([(mr, mr)])
+    assert s.entailment == 1.0
+
+
+async def test_undetectable_language_is_dropped_and_romanized_hindi_is_translated():
+    from app.adapters.mock import MockTranslator
+    from app.pipeline.write import to_english
+
+    class NoDetect(MockTranslator):
+        async def detect(self, text):
+            return []
+
+    d = DraftSentence(sentence="काहीतरी मराठी वाक्य येथे आहे.", passage_ids=["x"])
+    assert await to_english([d], [passage("x", text=d.sentence)], NoDetect()) == []
+    hi = passage("h", text="Mumbai airport ek hafte ke liye band hai.").model_copy(update={"language": "hi"})
+    out = await to_english([DraftSentence(sentence=hi.text, passage_ids=["h"])], [hi], MockTranslator())
+    assert [x.sentence for x in out] == ["Mumbai airport is closed for a week."]
+
+
+async def test_localize_translates_the_english_summary_even_when_the_evidence_is_marathi():
+    # After to_english every verified sentence is English, whatever the passage language.
+    from app.models.schemas import SummarySentence
+    from app.pipeline.write import VerifyReport, localize_summary
+
+    mr = passage("p1", text="नाशिक पोलिसांनी पूल रविवारी कोसळल्याची पुष्टी केली.").model_copy(update={"language": "mr"})
+    english = "Nashik police confirmed the bridge collapsed on Sunday."
+    report = VerifyReport(kept=[SummarySentence(sentence=english, sources=["src_p1"])], cited_passages=[mr])
+    back = "नाशिक पोलिसांनी पूल रविवारी कोसळल्याची पुष्टी केली."
+    summary, log = await localize_summary(report, _Translator({english: back}), _NLI({back}), 0.5, "mr")
+    assert [s.sentence for s in summary] == [back] and log[0]["kept"] == "translation"
