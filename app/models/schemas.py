@@ -184,6 +184,7 @@ class DraftSentence(BaseModel):
 
     sentence: str
     passage_ids: list[str]
+    source_sentence: str | None = None  # original-language sentence when `sentence` is its English translation
 
 
 class NLIScore(BaseModel):
