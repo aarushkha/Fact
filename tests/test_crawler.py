@@ -69,3 +69,9 @@ def test_extract_article():
     a = extract_article(article_html(body), "https://police-nashik.mock.example/a")
     assert a and "footbridge collapsed" in a.text and "Copyright" not in a.text
     assert extract_article(article_html("Too short."), "https://x.example/") is None
+
+
+def test_feed_urls_lose_fragments():
+    rss = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>
+    <item><title>A</title><link>https://x.example/a#publisher=newsstand</link></item></channel></rss>"""
+    assert parse_feed(rss)[0].url == "https://x.example/a"

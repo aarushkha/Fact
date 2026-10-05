@@ -140,7 +140,7 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
 
 ## TODOs left
 
-1. `sources.yaml`: the 3 placeholder entries need real sources and confirmed feed URLs.
+1. `sources.yaml`: 19 verified sources, but almost no tier-1 primary sources (PIB, state police, DGIPR, PTI, ANI were unreachable or feedless from the build environment). Add them from your network.
 2. `CRAWLER_USER_AGENT`: add a real contact address.
 3. Paid web-search fallback: only a stub (`app/adapters/web_search.py`). No provider was chosen, and
    `WEB_SEARCH_ENABLED=true` fails at startup.

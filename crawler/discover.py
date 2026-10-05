@@ -5,6 +5,7 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from urllib.parse import urldefrag
 
 import feedparser
 from lxml import etree
@@ -18,6 +19,9 @@ class Candidate:
     url: str
     published_at: datetime | None = None
     title: str | None = None
+
+    def __post_init__(self) -> None:
+        self.url = urldefrag(self.url.strip())[0]  # "#publisher=..." fragments would duplicate documents
 
 
 def parse_datetime(value: str | None) -> datetime | None:

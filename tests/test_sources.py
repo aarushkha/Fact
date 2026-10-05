@@ -32,6 +32,6 @@ def test_todo_entries_are_ignored():
     assert len(wl()) == 1
 
 
-def test_repo_sources_yaml_has_only_placeholders():
+def test_repo_sources_yaml_is_valid():
     w = load_whitelist_file(ROOT_DIR / "sources.yaml")
-    assert len(w) == 0  # all 3 entries are TODO placeholders until filled in
+    assert len(w) >= 10 and all(e.rss_url or e.sitemap_url for e in w.entries)
