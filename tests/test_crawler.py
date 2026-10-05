@@ -1,3 +1,6 @@
+import asyncio
+
+import httpx
 import pytest
 from datetime import datetime, timezone
 
@@ -208,3 +211,34 @@ def test_claim_review_list_value_and_verdict_first_text():
     from app.text import sentences
     text = claim_review_text(r)
     assert text == 'Fact-check verdict False on the claim "Video shows floods"' and len(sentences(text)) == 1
+
+
+async def test_host_throttle_spaces_requests_per_host():
+    from crawler.run import HostThrottle
+
+    t, slept = [0.0], []
+
+    async def fake_sleep(d):
+        slept.append(round(d, 3))
+
+    th = HostThrottle(1.0, clock=lambda: t[0], sleep=fake_sleep)
+    await asyncio.gather(th.wait("a.example"), th.wait("a.example"), th.wait("b.example"), th.wait("a.example"))
+    assert sorted(slept) == [1.0, 2.0]  # a: 0, 1, 2; b: no wait
+    th.set_crawl_delay("c.example", 5)
+    th.set_crawl_delay("d.example", 3600)  # capped
+    slept.clear()
+    for host in ("c.example", "c.example", "d.example", "d.example"):
+        await th.wait(host)
+    assert slept == [5.0, 60.0]
+
+
+async def test_robots_crawl_delay_applies_to_the_crawl_client():
+    from crawler.run import HostThrottle, Robots
+
+    def handler(request):
+        return httpx.Response(200, text="User-agent: *\nCrawl-delay: 7\n")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        client.throttle = HostThrottle(0.0)
+        assert await Robots(client, "FactCrawler").allowed("https://slow.example/a")
+        assert client.throttle._intervals == {"slow.example": 7.0}

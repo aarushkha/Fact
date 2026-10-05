@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     crawler_user_agent: str = "FactCrawler/0.1 (+contact: TODO)"
     crawler_max_articles_per_source: int = 50
     crawler_concurrency: int = 4
+    crawler_min_host_interval_seconds: float = 1.0  # min gap between requests to one host (robots Crawl-delay can raise it)
     chunk_max_words: int = 180
 
     # --- sources whitelist ---

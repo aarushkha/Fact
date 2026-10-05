@@ -17,6 +17,7 @@ import asyncio
 import ipaddress
 import logging
 import socket
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
@@ -91,6 +92,48 @@ async def safe_get(client: httpx.AsyncClient, url: str, domains: set[str]) -> ht
     raise httpx.TooManyRedirects(f"more than {MAX_REDIRECTS} redirects", request=r.request)
 
 
+class HostThrottle:
+    """Spaces requests to the same host at least `interval` seconds apart, across all concurrent tasks.
+
+    Installed as an httpx request hook (crawl_client), so every request counts: feeds, sitemaps,
+    robots.txt, articles and each redirect hop. A robots.txt Crawl-delay raises the interval for its host.
+    """
+
+    def __init__(self, interval: float, clock=time.monotonic, sleep=asyncio.sleep, max_delay: float = 60.0):
+        self.interval = interval
+        self.max_delay = max_delay
+        self.clock = clock
+        self.sleep = sleep
+        self._next: dict[str, float] = {}
+        self._intervals: dict[str, float] = {}
+        self._lock = asyncio.Lock()
+
+    def set_crawl_delay(self, host: str, seconds: float | None) -> None:
+        if seconds:
+            self._intervals[host] = min(float(seconds), self.max_delay)
+
+    async def wait(self, host: str) -> None:
+        async with self._lock:  # reserve a slot; sleep outside the lock so other hosts are not held up
+            now = self.clock()
+            at = max(now, self._next.get(host, now))
+            self._next[host] = at + max(self.interval, self._intervals.get(host, 0.0))
+        if at > now:
+            await self.sleep(at - now)
+
+    async def __call__(self, request: httpx.Request) -> None:
+        await self.wait(request.url.host)
+
+
+def crawl_client(settings: Settings) -> httpx.AsyncClient:
+    """The crawler's HTTP client: our user agent, per-host throttling (redirects are followed by safe_get)."""
+    throttle = HostThrottle(settings.crawler_min_host_interval_seconds)
+    client = httpx.AsyncClient(
+        headers={"User-Agent": settings.crawler_user_agent}, timeout=20, event_hooks={"request": [throttle]}
+    )
+    client.throttle = throttle  # type: ignore[attr-defined]  # lets Robots apply Crawl-delay
+    return client
+
+
 @dataclass
 class CrawlStats:
     discovered: int = 0
@@ -122,6 +165,9 @@ class Robots:
             except httpx.HTTPError:
                 rp.parse([])
             self._cache[base] = rp
+            throttle = getattr(self.client, "throttle", None)
+            if throttle is not None:
+                throttle.set_crawl_delay(parts.hostname or "", rp.crawl_delay(self.user_agent))
         return self._cache[base].can_fetch(self.user_agent, url)
 
 
@@ -299,8 +345,7 @@ async def _main(args: argparse.Namespace) -> int:
     if not len(whitelist):
         print(f"No usable sources in {settings.effective_sources_file} (fill in the TODO entries).")
         return 1
-    headers = {"User-Agent": settings.crawler_user_agent}
-    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=20) as client:
+    async with crawl_client(settings) as client:
         if args.dry_run:
             for entry in whitelist.entries:
                 if args.source and host_of(entry.domain) != host_of(args.source):

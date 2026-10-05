@@ -212,6 +212,6 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
 8. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
 9. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
     language per text (mixed-language posts are flagged by a heuristic).
-10. Crawler has no per-host rate limit beyond the concurrency limit.
+10. Crawler politeness: at most one request per host every `CRAWLER_MIN_HOST_INTERVAL_SECONDS` (raised by a robots.txt `Crawl-delay`, capped at 60 s), within one crawler process.
 11. The Docker image build was not run in the development environment (no Docker daemon there); the
     compose file was validated with `docker compose config`.
