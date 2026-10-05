@@ -35,6 +35,32 @@ from crawler.extract import claim_review_text, extract_article, extract_claim_re
 
 log = logging.getLogger("fact.crawler")
 MAX_CHILD_SITEMAPS = 5
+MAX_REDIRECTS = 5
+
+
+class OffsiteRedirect(httpx.HTTPError):
+    """A redirect (or sitemap child) pointing outside the hosts allowed for that request."""
+
+
+def on_domain(url: str, domains: set[str]) -> bool:
+    """http(s) URL whose host is one of `domains` or a subdomain of one."""
+    if urlparse(url).scheme not in ("http", "https"):
+        return False
+    host = host_of(url)
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
+async def safe_get(client: httpx.AsyncClient, url: str, domains: set[str]) -> httpx.Response:
+    """GET that follows redirects itself and only to `domains`, so a publisher's redirect (or a
+    compromised sitemap) cannot make the crawler request internal or arbitrary hosts."""
+    for _ in range(MAX_REDIRECTS + 1):
+        r = await client.get(url, follow_redirects=False)
+        if not r.is_redirect:
+            return r
+        url = urljoin(str(r.url), r.headers.get("location", ""))
+        if not on_domain(url, domains):
+            raise OffsiteRedirect(f"redirect to {url} leaves {sorted(domains)}")
+    raise httpx.TooManyRedirects(f"more than {MAX_REDIRECTS} redirects", request=r.request)
 
 
 @dataclass
@@ -63,7 +89,7 @@ class Robots:
         if base not in self._cache:
             rp = RobotFileParser()
             try:
-                r = await self.client.get(urljoin(base, "/robots.txt"))
+                r = await safe_get(self.client, urljoin(base, "/robots.txt"), {host_of(base)})
                 rp.parse(r.text.splitlines() if r.status_code == 200 else [])
             except httpx.HTTPError:
                 rp.parse([])
@@ -76,12 +102,13 @@ async def discover(client: httpx.AsyncClient, entry: SourceEntry) -> list[Candid
     only a source whose discovery URLs all fail raises."""
     found: list[Candidate] = []
     tried, failures = 0, []
+    domain = host_of(entry.domain)
 
-    async def fetch(url: str) -> bytes | None:
+    async def fetch(url: str, domains: set[str]) -> bytes | None:
         nonlocal tried
         tried += 1
         try:
-            r = await client.get(url)
+            r = await safe_get(client, url, domains)
             r.raise_for_status()
             return r.content
         except httpx.HTTPError as exc:
@@ -89,8 +116,8 @@ async def discover(client: httpx.AsyncClient, entry: SourceEntry) -> list[Candid
             log.warning("discovery failed %s: %s", url, exc)
             return None
 
-    for feed in entry.feed_specs:
-        content = await fetch(feed.url)
+    for feed in entry.feed_specs:  # configured URLs are trusted (e.g. a feedburner host); their redirects are not
+        content = await fetch(feed.url, {domain, host_of(feed.url)})
         if content is not None:
             for c in parse_feed(content):
                 c.language = feed.language
@@ -100,7 +127,11 @@ async def discover(client: httpx.AsyncClient, entry: SourceEntry) -> list[Candid
         while queue and seen <= MAX_CHILD_SITEMAPS:
             url = queue.pop(0)
             seen += 1
-            content = await fetch(url)
+            if url != entry.sitemap_url and not on_domain(url, {domain}):
+                failures.append(f"{url}: child sitemap outside {domain}")
+                log.warning("skip child sitemap outside %s: %s", domain, url)
+                continue
+            content = await fetch(url, {domain})
             if content is None:
                 continue
             items, children = parse_sitemap(content)
@@ -157,7 +188,11 @@ async def crawl_source(
                 if not await robots.allowed(c.url):
                     stats.skipped_robots += 1
                     return
-                r = await client.get(c.url)
+                try:
+                    r = await safe_get(client, c.url, {host_of(entry.domain)})
+                except OffsiteRedirect:
+                    stats.skipped_offsite += 1  # redirect leaves the whitelisted domain: not followed
+                    return
                 r.raise_for_status()
                 final_url = str(r.url)
                 if whitelist.lookup(final_url) is not entry:

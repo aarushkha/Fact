@@ -1,3 +1,4 @@
+import pytest
 from datetime import datetime, timezone
 
 from crawler.chunk import chunk_text
@@ -142,3 +143,38 @@ async def test_discover_survives_one_failing_feed_and_tags_languages():
         dead = SourceEntry(name="d", domain="wire.mock.example", tier=1, rss_url="https://wire.mock.example/down")
         with pytest.raises(RuntimeError, match="all discovery URLs failed"):
             await discover(client, dead)
+
+
+async def test_crawler_never_follows_redirects_or_child_sitemaps_off_domain():
+    import httpx
+
+    from app.sources import SourceEntry
+    from crawler.run import OffsiteRedirect, discover, safe_get
+
+    index = b"""<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<sitemap><loc>http://169.254.169.254/latest/meta-data/</loc></sitemap>
+<sitemap><loc>https://wire.mock.example/sitemap-1.xml</loc></sitemap></sitemapindex>"""
+    requested = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        if request.url.path == "/sitemap.xml":
+            return httpx.Response(200, content=index)
+        if request.url.path == "/sitemap-1.xml":
+            return httpx.Response(200, content=SITEMAP)
+        if request.url.path == "/moved":
+            return httpx.Response(302, headers={"location": "http://10.0.0.5/admin"})
+        if request.url.path == "/hop":
+            return httpx.Response(301, headers={"location": "/sitemap-1.xml"})
+        return httpx.Response(404)
+
+    entry = SourceEntry(name="w", domain="wire.mock.example", tier=1, sitemap_url="https://wire.mock.example/sitemap.xml")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        found = await discover(client, entry)
+        assert {c.url for c in found} == {"https://wire.mock.example/a", "https://wire.mock.example/b"}
+        assert not any("169.254" in u for u in requested)
+        with pytest.raises(OffsiteRedirect):
+            await safe_get(client, "https://wire.mock.example/moved", {"wire.mock.example"})
+        assert not any("10.0.0.5" in u for u in requested)
+        r = await safe_get(client, "https://wire.mock.example/hop", {"wire.mock.example"})  # on-domain hop is fine
+        assert r.status_code == 200 and str(r.url).endswith("/sitemap-1.xml")

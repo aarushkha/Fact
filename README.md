@@ -136,7 +136,9 @@ python -m crawler.run --source example.org --limit 20 --since-days 7
 python -m crawler.run --reindex                 # also re-extract and re-embed already-stored articles
 ```
 
-The crawler only keeps URLs on each source's own domain (also after redirects) and obeys robots.txt.
+The crawler only keeps URLs on each source's own domain and obeys robots.txt. It follows redirects
+itself and never off the source's domain, and ignores child sitemaps on other hosts, so a publisher's
+redirect or sitemap cannot point it at an internal address.
 It extracts article text with trafilatura, splits it into sentence chunks, embeds them, and stores them
 with url, publisher, tier and published_at. Already-stored URLs are skipped (compared without scheme,
 `www.`, query or trailing slash, since feeds may link a URL that redirects) unless `--reindex` is
