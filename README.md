@@ -75,6 +75,23 @@ Set both to `llm` for LLM-quality extraction and writing. The Gemini free tier a
 `RATE_LIMIT_PER_MINUTE` limits checks per key (or per IP when auth is off). The limiter is in-memory
 and per process.
 
+## Background worker, rechecks, monitoring, model server
+
+- `python -m app.worker` (compose service `worker`) re-runs UNVERIFIED claims whose `recheck_at` has
+  passed (TOO_EARLY after 6 h, EVIDENCE_MISSING after 7 days, never past `RECHECK_MAX_AGE_DAYS`) and
+  crawls all sources every `CRAWL_INTERVAL_MINUTES`. A new verdict links `rechecked_from`; the old one
+  is marked `superseded_at`. Use `--once` for cron.
+- Rumour-cascade signals per claim: repeat submissions in 24 h / 7 d, first seen, supporting passages
+  per tier and `echo_only` (only aggregators support it). They are stored in `claims.signals` and sent
+  on the `verdict` event; they never change the status.
+- `GET /api/monitoring?hours=24` and the `/monitor` page show: checks, statuses and abstain rate,
+  per-stage latency and errors, models and fallbacks, NLI deletion rate, rechecks and top cascades.
+- Optional model server: `uvicorn app.model_server:app --port 8001` (or
+  `docker compose --profile models up`) with `MODEL_SERVER_URL` set. The API and worker then don't
+  load torch.
+- Migrations: Alembic (`app/db/migrations`). The app upgrades to head on startup. After changing
+  `app/db/tables.py`, run `alembic revision --autogenerate -m "..."`. CI fails on drift (`alembic check`).
+
 ## How a check works
 
 `ingest` → `normalize` → `extract` → (cache + fact-check match) → `retrieve` → `judge` → `write` →
@@ -86,6 +103,9 @@ These rules are enforced in code (`app/pipeline/judge.py`, `write.py`), not left
 - Below `CONFIDENCE_THRESHOLD`, the pipeline abstains. Claim age (post date vs. now) alone separates
   TOO_EARLY from EVIDENCE_MISSING; an unknown post date means EVIDENCE_MISSING.
 - Only whitelisted sources count, including fact-check reviews.
+- A passage only counts if the judge says it is about the **same incident** as the claim
+  (`SAME_EVENT_THRESHOLD`). Without this, debunks of *other* viral videos (similar wording) were the
+  evidence behind most confident errors on real data.
 - Every summary sentence must be entailed by a cited passage according to the NLI check, or it is
   deleted. If nothing survives, the claim carries a status only.
 - The cache only reuses definitive verdicts. It requires cosine similarity ≥ threshold, at least one
@@ -141,6 +161,11 @@ Crescendo, Lokmat) via the Fact Check API. Rebuild it with `python -m eval.build
   to watch is the **confident-wrong rate**.
 - Run it with `python -m eval.run --file eval/factchecks.jsonl --split all`.
 
+On the real set, confident errors came almost entirely from two causes. Unrelated fact-check articles
+were used as evidence; this is now fixed by the same-event gate, and 19 of 23 such rows now abstain.
+The rest come from fact-checkers disagreeing with each other on CONTRADICTED vs MISLEADING (label
+noise). Re-run the full set after a longer crawl.
+
 Current results:
 - **Mock mode:** 10/10 correct.
 - **Real mode on the fictional corpus:** 9/10, 0 confident-wrong, citation precision 1.0.
@@ -163,16 +188,14 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
 3. Paid web-search fallback: only a stub (`app/adapters/web_search.py`). No provider was chosen, and
    `WEB_SEARCH_ENABLED=true` fails at startup.
 4. Only Gemini is implemented for `LLM_PROVIDER` / `VISION_PROVIDER`.
-5. Evaluation: the real fact-check set is mostly false claims (CONFIRMED is rare in fact-checks) and
+5. Evaluation (data is the main gap; calibrate Jev once there is enough labelled data): the real fact-check set is mostly false claims (CONFIRMED is rare in fact-checks) and
    has no TOO_EARLY / NOT_CHECKABLE rows; those come only from the 10 synthetic examples. All thresholds
    in `.env.example` are untuned defaults.
-6. Database migrations: tables are created with `create_all`; switch to Alembic once the schema settles.
-7. Rate limiter and API keys are in-memory/env based; move to a shared store when running several workers.
-8. `recheck_at` is stored, but nothing re-runs checks yet (needs a scheduler/cron).
-9. LLM-written summaries are English only (extractive quotes keep the source language); consider writing them in the post's language.
-10. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
-11. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
+6. Rate limiter and API keys are in-memory/env based; move to a shared store when running several workers.
+7. LLM-written summaries are English only (extractive quotes keep the source language); consider writing them in the post's language.
+8. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
+9. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
     language per text (mixed-language posts are flagged by a heuristic).
-12. Crawler runs on demand only (no schedule) and has no per-host rate limit beyond the concurrency limit.
-13. The Docker image build was not run in the development environment (no Docker daemon there); the
+10. Crawler has no per-host rate limit beyond the concurrency limit.
+11. The Docker image build was not run in the development environment (no Docker daemon there); the
     compose file was validated with `docker compose config`.
