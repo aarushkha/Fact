@@ -71,12 +71,15 @@ class Store(Protocol):
         post_date: datetime | None = None,
         signals: dict | None = None,
         created_at: datetime | None = None,
+        account_handle: str | None = None,
     ) -> None: ...
 
     async def similar_claim_stats(
-        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float,
+        account_handle: str | None = None,
     ) -> dict:
-        """{count_24h, count_7d, first_seen} over earlier claims with cosine >= threshold, since `since`."""
+        """{count_24h, count_7d, first_seen, accounts_7d} over earlier claims with cosine >= threshold, since
+        `since`. accounts_7d counts distinct poster handles among them plus `account_handle` (this post's)."""
         ...
 
     async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:
@@ -99,6 +102,12 @@ class Store(Protocol):
     async def fail_check(self, check_id: str, error: str) -> None: ...
 
     async def get_check(self, check_id: str) -> CheckResponse | None: ...
+
+
+def normalize_handle(handle: str | None) -> str | None:
+    """'@Some_User ' -> 'some_user'. Handles are only compared with each other, never shown."""
+    h = (handle or "").strip().lstrip("@").strip().lower()
+    return h or None
 
 
 def cosine(a: list[float], b: list[float]) -> float:
@@ -126,6 +135,7 @@ class _StoredClaim:
     post_date: datetime | None = None
     created_at: datetime | None = None
     signals: dict | None = None
+    account_handle: str | None = None
     rechecked_from: int | None = None
     superseded: bool = False
 
@@ -176,29 +186,35 @@ class InMemoryStore:
         post_date: datetime | None = None,
         signals: dict | None = None,
         created_at: datetime | None = None,
+        account_handle: str | None = None,
     ) -> None:
         self.claims.append(
             _StoredClaim(
                 check_id, claim, embedding, embedding_model, entity_keys(entities), sources, recheck_at,
                 id=len(self.claims) + 1, claim_key=claim_key, post_date=post_date,
                 created_at=created_at or datetime.now(timezone.utc), signals=signals,
+                account_handle=normalize_handle(account_handle),
             )
         )
 
     async def similar_claim_stats(
-        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float,
+        account_handle: str | None = None,
     ) -> dict:
         from datetime import timedelta
 
-        hits = [
-            r.created_at for r in self.claims
+        rows = [
+            r for r in self.claims
             if r.embedding_model == embedding_model and r.created_at and since <= r.created_at <= now
             and cosine(embedding, r.embedding) >= threshold
         ]
+        hits = [r.created_at for r in rows]
+        handles = {r.account_handle for r in rows if r.account_handle} | {normalize_handle(account_handle)} - {None}
         return {
             "count_24h": sum(1 for t in hits if t >= now - timedelta(hours=24)),
             "count_7d": len(hits),
             "first_seen": min(hits) if hits else None,
+            "accounts_7d": len(handles),
         }
 
     async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:

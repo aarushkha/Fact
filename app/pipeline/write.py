@@ -54,7 +54,7 @@ def needs_english(d: DraftSentence, passages: list[Passage]) -> bool:
 
 
 async def to_english(drafts: list[DraftSentence], passages: list[Passage], translator: Translator) -> list[DraftSentence]:
-    """Summaries are shown in English. A draft quoting non-English evidence is translated and keeps its
+    """Normalize drafts to English before verification and optional localization. A translated draft keeps its
     original as `source_sentence` (used to pick premise windows). NLI then checks the English sentence
     against the original passage: real mDeBERTa scores Marathi→Marathi pairs near chance (a sentence
     against itself: 0.27-0.36 entailment) but a Marathi passage → English sentence well (0.68-0.85).
@@ -141,3 +141,50 @@ async def verify_sentences(
     report.cited_passages = list(cited_ids.values())
     return report
 
+
+
+def base_language(code: str | None) -> str | None:
+    return code.split("-")[0] if code else None
+
+
+async def localize_summary(
+    report: VerifyReport, translator, nli: NLIVerifier, threshold: float, target: str | None,
+    claim_text: str | None = None, status: Status | str | None = None, restatement_threshold: float = 0.8,
+) -> tuple[list[SummarySentence], list[dict]]:
+    """Translate verified sentences (always English: see to_english) into the post's language; a
+    translation is shown only if it passes the same checks as the English sentence (NLI against its own
+    cited passages; under a "fails" status, no claim label and no restatement). Otherwise the verified
+    English sentence stays. Returns (summary, log). Marathi rarely passes: mDeBERTa scores Marathi
+    hypotheses poorly (8/20 vs 13/20 for Hindi on real evidence), so most Marathi posts keep English.
+
+    Hinglish ("hi-Latn") gets Devanagari Hindi: Sarvam's romanized output has not been verified.
+    """
+    target = "hi" if target == "hi-Latn" else target
+    by_source = {p.source_id: p for p in report.cited_passages}
+    status_value = getattr(status, "value", status)
+    out, log = [], []
+    for s in report.kept:
+        cited = [by_source[sid] for sid in s.sources if sid in by_source]
+        if not target or not cited or base_language(target) == "en":
+            out.append(s)
+            continue
+        try:
+            translated = (await translator.translate(s.sentence, "en", target)).strip()
+        except Exception as exc:  # a failed translation never loses the verified sentence
+            log.append({"sentence": s.sentence, "kept": "original", "reason": f"translate failed: {exc}"})
+            out.append(s)
+            continue
+        pairs = [(w, translated) for p in cited for w in best_windows(p.text, translated)]
+        check_echo = bool(claim_text) and status_value in FAILS
+        scores = await nli.score(pairs + ([(translated, claim_text)] if check_echo else []))
+        entailed = any(sc.entailment >= threshold for sc in scores[: len(pairs)])
+        restates = check_echo and scores[-1].entailment >= restatement_threshold
+        labelled = status_value in FAILS and CLAIM_LABEL.search(translated)
+        if translated and entailed and not restates and not labelled:
+            out.append(SummarySentence(sentence=translated, sources=s.sources))
+            log.append({"sentence": s.sentence, "kept": "translation", "translation": translated})
+        else:
+            reason = "not entailed" if not entailed else "restates the claim" if restates else "claim label"
+            log.append({"sentence": s.sentence, "kept": "original", "translation": translated, "reason": reason})
+            out.append(s)
+    return out, log

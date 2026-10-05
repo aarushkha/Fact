@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import case, func, insert, select, update
+from sqlalchemy import case, func, insert, literal, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.db.store import CachedVerdict, DueRecheck, StageRun, entity_keys
+from app.db.store import CachedVerdict, DueRecheck, StageRun, entity_keys, normalize_handle
 from app.db.tables import Tables
 from app.jsonable import to_jsonable
 from app.models.schemas import DEFINITIVE_STATUSES, UNVERIFIED_STATUSES, CheckResponse, ClaimResult, Entity, SourceOut
@@ -97,6 +97,7 @@ class PgStore:
         post_date: datetime | None = None,
         signals: dict | None = None,
         created_at: datetime | None = None,
+        account_handle: str | None = None,
     ) -> None:
         async with self.engine.begin() as conn:
             claim_id = (
@@ -113,6 +114,7 @@ class PgStore:
                         embedding=embedding,
                         embedding_model=embedding_model,
                         post_date=post_date,
+                        account_handle=normalize_handle(account_handle),
                         signals=_json(signals) if signals else None,
                         **({"created_at": created_at} if created_at else {}),
                     )
@@ -132,20 +134,25 @@ class PgStore:
             )
 
     async def similar_claim_stats(
-        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float,
+        account_handle: str | None = None,
     ) -> dict:
         from datetime import timedelta
 
         c = self.t.claims
         similar = (1 - c.c.embedding.cosine_distance(embedding)) >= threshold
+        handle = normalize_handle(account_handle)
         stmt = select(
             func.count().filter(c.c.created_at >= now - timedelta(hours=24)),
             func.count(),
             func.min(c.c.created_at),
+            func.count(c.c.account_handle.distinct()),
+            func.count().filter(c.c.account_handle == handle) if handle else literal(0),
         ).where(c.c.embedding_model == embedding_model, c.c.created_at >= since, c.c.created_at <= now, similar)
         async with self.engine.connect() as conn:
-            n24, n7, first = (await conn.execute(stmt)).one()
-        return {"count_24h": n24, "count_7d": n7, "first_seen": first}
+            n24, n7, first, accounts, seen = (await conn.execute(stmt)).one()
+        accounts += 1 if handle and not seen else 0
+        return {"count_24h": n24, "count_7d": n7, "first_seen": first, "accounts_7d": accounts}
 
     async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:
         sr, ch, c, v = self.t.stage_runs, self.t.checks, self.t.claims, self.t.verdicts

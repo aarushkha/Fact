@@ -12,7 +12,6 @@ import asyncio
 import logging
 import time
 
-import httpx
 
 from app.adapters.factory import build_adapters
 from app.config import get_settings
@@ -27,6 +26,7 @@ log = logging.getLogger("fact.worker")
 
 async def main_async(once: bool, crawl: bool) -> None:
     from crawler.run import crawl as run_crawl
+    from crawler.run import crawl_client
 
     s = get_settings()
     logging.basicConfig(level=s.log_level)
@@ -46,8 +46,7 @@ async def main_async(once: bool, crawl: bool) -> None:
             if crawl and not s.mock_mode and now >= next_crawl:
                 next_crawl = now + s.crawl_interval_minutes * 60
                 try:
-                    headers = {"User-Agent": s.crawler_user_agent}
-                    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=20) as client:
+                    async with crawl_client(s) as client:
                         stats = await run_crawl(s, engine=engine, tables=tables, whitelist=whitelist,
                                                 embedder=adapters.embedder, client=client)
                     log.info("crawl pass: stored=%d passages=%d failed=%d", stats.stored, stats.passages, stats.failed)

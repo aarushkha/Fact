@@ -72,8 +72,9 @@ Set both to `llm` for LLM-quality extraction and writing. The Gemini free tier a
 
 **API protection.** Set `API_KEYS` (comma-separated) to require an `X-API-Key` header on
 `/api/check*` and `/api/checks/*`; the test page shows a key field when a key is required.
-`RATE_LIMIT_PER_MINUTE` limits checks per key (or per IP when auth is off). The limiter is in-memory
-and per process.
+`RATE_LIMIT_PER_MINUTE` limits checks per key (or per IP when auth is off). With `DATABASE_URL` set the
+limiter lives in Postgres (`rate_limit_hits`), so all API workers share one budget per client; without a
+database it is in-memory and per process. API keys come from the environment, so every worker shares them.
 
 ## Background worker, rechecks, monitoring, model server
 
@@ -82,8 +83,9 @@ and per process.
   crawls all sources every `CRAWL_INTERVAL_MINUTES`. A new verdict links `rechecked_from`; the old one
   is marked `superseded_at`. Use `--once` for cron.
 - Rumour-cascade signals per claim: repeat submissions in 24 h / 7 d, first seen, supporting passages
-  per tier and `echo_only` (only aggregators support it). They are stored in `claims.signals` and sent
-  on the `verdict` event; they never change the status.
+  per tier, `echo_only` (only aggregators support it) and `distinct_accounts_7d` (distinct poster handles
+  read from screenshots of the same rumour; stored normalised in `claims.account_handle`). They are stored
+  in `claims.signals` and sent on the `verdict` event; they never change the status.
 - `GET /api/monitoring?hours=24` and the `/monitor` page show: checks, statuses and abstain rate,
   per-stage latency and errors, models and fallbacks, NLI deletion rate, rechecks and top cascades.
 - Optional model server: `uvicorn app.model_server:app --port 8001` (or
@@ -111,7 +113,7 @@ These rules are enforced in code (`app/pipeline/judge.py`, `write.py`), not left
   deleted. Under CONTRADICTED or MISLEADING_CONTEXT, a sentence that itself entails the claim
   (`NLI_RESTATEMENT_THRESHOLD`) or is labelled as the claim ("Claim: …") is deleted too: it restates
   the claim, like the quote a debunk opens with. If nothing survives, the claim carries a status only.
-- Summaries are always in English. A quote from Marathi or Hindi evidence is translated, and NLI
+- Summaries default to English. A quote from Marathi or Hindi evidence is translated, and NLI
   checks the English sentence against the original passage (the NLI model can't compare Marathi with
   Marathi reliably, but handles Marathi evidence → English sentence well).
   Fact-check passages are stored as one verdict-first sentence (`Fact-check verdict False on the claim
@@ -172,9 +174,10 @@ reported as `errors` and left out of every rate. The sweep runs once with thresh
 every threshold exactly; an answer the replay turns into an abstention no longer counts as correct.
 Date-only `post_date` values are read in `TIMEZONE`, as in the app.
 
-**Real fact-check set**: `eval/factchecks.jsonl` holds 200 real claims (en 80, hi 70, mr 50),
+**Real fact-check set**: `eval/factchecks.jsonl` holds 300 real claims (en 120, hi 105, mr 75),
 labelled by published fact-checks (Alt News, Factly, Vishvas, BOOM, The Quint, Aaj Tak, Fact
-Crescendo, Lokmat) via the Fact Check API. Rebuild it with `python -m eval.build_factcheck_set`.
+Crescendo, Lokmat) via the Fact Check API. Grow it with `python -m eval.build_factcheck_set --append --n 100`
+(keeps every existing row; without `--append` the file is rebuilt from scratch).
 - Each row excludes its own labelling review from the evidence, so the answer can't simply be looked up.
 - Without other evidence the right behaviour is to abstain, so accuracy is low by design. The number
   to watch is the **confident-wrong rate**.
@@ -210,11 +213,14 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
 5. Evaluation (data is the main gap; calibrate Jev once there is enough labelled data): the real fact-check set is mostly false claims (CONFIRMED is rare in fact-checks) and
    has no TOO_EARLY / NOT_CHECKABLE rows; those come only from the 10 synthetic examples. All thresholds
    in `.env.example` are untuned defaults.
-6. Rate limiter and API keys are in-memory/env based; move to a shared store when running several workers.
-7. LLM-written summaries are English only (extractive quotes keep the source language); consider writing them in the post's language.
+6. API keys live in `API_KEYS` (no per-key quotas, revocation means a restart). The rate limiter is shared through Postgres.
+7. Summaries are English by default. `SUMMARY_LANGUAGE=post` translates each verified English sentence into the
+   post's language (Sarvam) and shows it only if it passes NLI against its own passage again; otherwise the
+   English sentence stays. Measured on 20 real English evidence sentences: Hindi translations pass 13/20, Marathi
+   8/20 (English 15/20), so the default stays `english`. Hinglish posts get Devanagari Hindi.
 8. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
 9. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
     language per text (mixed-language posts are flagged by a heuristic).
-10. Crawler has no per-host rate limit beyond the concurrency limit.
-11. The Docker image build was not run in the development environment (no Docker daemon there); the
-    compose file was validated with `docker compose config`.
+10. Crawler politeness: at most one request per host every `CRAWLER_MIN_HOST_INTERVAL_SECONDS` (raised by a robots.txt `Crawl-delay`, capped at 60 s), within one crawler process.
+11. The Docker image is built in CI: the `image` job starts app + pgvector with compose in mock mode and
+    runs one check. Model weights (`INSTALL_MODELS=true`) are not built in CI.

@@ -1,6 +1,7 @@
 """Build eval/factchecks.jsonl: real claims labelled by published fact-checks (Google Fact Check API).
 
     python -m eval.build_factcheck_set [--n 200] [--seed 7]
+    python -m eval.build_factcheck_set --append --n 100     # keep every existing row, add 100 new ones
 
 Labels come from each review's textualRating through the same conservative exact-match table the
 pipeline uses (app/pipeline/match.py RATING_MAP); unmappable ratings ("Half true", "Altered", ...) are
@@ -75,17 +76,30 @@ def to_row(site: str, hit) -> dict | None:
     }
 
 
-async def main_async(n: int, seed: int, out: Path) -> None:
+def norm_text(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def load_existing(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+async def main_async(n: int, seed: int, out: Path, append: bool = False) -> None:
     key = get_settings().google_factcheck_api_key
     if not key:
         raise SystemExit("GOOGLE_FACTCHECK_API_KEY is not set")
     batches = await asyncio.gather(*(fetch(s, key) for s in PUBLISHERS))
-    seen, by_lang = set(), defaultdict(list)
+    existing = load_existing(out) if append else []
+    # Appending never changes or re-labels an existing row; new rows must differ in review and claim text.
+    known_ids = {r["id"] for r in existing}
+    seen, by_lang = {norm_text(r["input_text"]) for r in existing}, defaultdict(list)
     for batch in batches:
         for item in batch:
             row = to_row(item["site"], item["hit"])
-            norm = " ".join((row or {}).get("input_text", "").lower().split())
-            if row and norm not in seen:
+            norm = norm_text((row or {}).get("input_text", ""))
+            if row and norm not in seen and row["id"] not in known_ids:
                 seen.add(norm)
                 by_lang[row["language"]].append(row)
     rng = random.Random(seed)
@@ -112,12 +126,12 @@ async def main_async(n: int, seed: int, out: Path) -> None:
     if len(picked) < n:
         available = ", ".join(f"{lang}={len(by_lang[lang])}" for lang in LANGS)
         raise SystemExit(f"only {len(picked)} eligible rows for --n {n} ({available}); nothing written")
-    picked.sort(key=lambda r: r["id"])
-    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in picked), encoding="utf-8")
+    rows = sorted(existing + picked, key=lambda r: r["id"])
+    out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
     counts = defaultdict(int)
-    for r in picked:
+    for r in rows:
         counts[(r["language"], r["expected_status"])] += 1
-    print(f"wrote {len(picked)} rows to {out}")
+    print(f"wrote {len(rows)} rows to {out} ({len(picked)} new)")
     for k in sorted(counts):
         print(f"  {k[0]:<3} {k[1]:<20} {counts[k]}")
 
@@ -127,8 +141,9 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--out", default=str(ROOT_DIR / "eval" / "factchecks.jsonl"))
+    ap.add_argument("--append", action="store_true", help="keep the rows already in --out; --n counts new rows")
     args = ap.parse_args()
-    asyncio.run(main_async(args.n, args.seed, Path(args.out)))
+    asyncio.run(main_async(args.n, args.seed, Path(args.out), args.append))
 
 
 if __name__ == "__main__":

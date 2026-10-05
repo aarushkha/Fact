@@ -10,7 +10,7 @@ The non-negotiable rules are enforced in code, not left to the model:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from app.adapters.base import Classifier
@@ -77,12 +77,35 @@ def unverified_status(age_hours: float | None, window_hours: float) -> Status:
     return Status.UNVERIFIED_EVIDENCE_MISSING
 
 
+FAILS = (Status.CONTRADICTED, Status.MISLEADING_CONTEXT)
+
+
+def review_disagreement(
+    effective: list[tuple[PassageJudgment, Passage]], review_ratings: dict[str, Status]
+) -> set[Status]:
+    """Distinct mapped ratings among the fact-check reviews that count as evidence ({} or one = agreement).
+
+    Only reviews in `effective` count: a review the same-event gate rejected, or one outranked by a
+    primary source, cannot create (or settle) a disagreement.
+    """
+    ratings = {review_ratings[p.id] for _, p in effective if p.id in review_ratings}
+    return ratings if len(ratings) > 1 else set()
+
+
 def decide_status(
     probabilities: dict[Status, float],
     effective: list[tuple[PassageJudgment, Passage]],
     age_hours: float | None,
     t: Thresholds,
+    disagreement: set[Status] = frozenset(),
 ) -> tuple[Status, float]:
+    """`disagreement`: the ratings of whitelisted fact-checkers that disagree about this claim.
+
+    Fact-checkers often split CONTRADICTED vs MISLEADING_CONTEXT on the same claim (most remaining
+    real-eval errors). Then the more conservative MISLEADING_CONTEXT is returned: both reviews say the
+    claim fails as stated, only one says the event never happened. Reviews split on direction (one says
+    it holds, another that it fails) mean abstaining.
+    """
     stances = {j.stance for j, _ in effective}
     candidates = sorted(
         ((s, probabilities.get(s, 0.0)) for s in DEFINITIVE_STATUSES), key=lambda sp: -sp[1]
@@ -97,7 +120,11 @@ def decide_status(
         Status.MISLEADING_CONTEXT: bool(stances),
     }[status]
 
-    if evidence_ok and p >= t.confidence and p > unverified_p:
+    direction_split = Status.CONFIRMED in disagreement and any(r in disagreement for r in FAILS)
+    if evidence_ok and p >= t.confidence and p > unverified_p and not direction_split:
+        if status == Status.CONTRADICTED and Status.MISLEADING_CONTEXT in disagreement:
+            # Confidence stays the judge's: it measures "the claim fails as stated", which both reviews share.
+            return Status.MISLEADING_CONTEXT, round(p, 4)
         return status, round(p, 4)
     # Abstaining. Confidence = how sure we are that no definitive status is warranted: the judge's
     # unverified probability, or 1 - p when the judge leaned definitive but was unsure.
@@ -113,6 +140,7 @@ class JudgeResult:
     judgments: list[PassageJudgment]
     expected: list[ExpectedEvidence]
     effective: list[tuple[PassageJudgment, Passage]]
+    disagreement: set[Status] = field(default_factory=set)  # fact-check ratings that disagree (logged, SSE)
 
 
 async def judge_claim(
@@ -121,7 +149,9 @@ async def judge_claim(
     classifier: Classifier,
     age_hours: float | None,
     t: Thresholds,
+    review_ratings: dict[str, Status] | None = None,
 ) -> JudgeResult:
+    """review_ratings: passage id -> mapped rating, for passages that are whitelisted fact-check reviews."""
     raw = await asyncio.gather(*(classifier.judge_passage(claim, p) for p in passages))
     judgments = [apply_same_event_gate(j, t.same_event) for j in raw]
     expected = await classifier.expected_evidence(claim, passages, judgments)
@@ -132,8 +162,9 @@ async def judge_claim(
         claim, relevant, [j for j in judgments if j.passage_id in relevant_ids], expected, age_hours
     )
     effective = effective_judgments(judgments, passages, t.passage_relevance)
-    status, confidence = decide_status(verdict.probabilities, effective, age_hours, t)
-    return JudgeResult(status, confidence, verdict.probabilities, judgments, expected, effective)
+    disagreement = review_disagreement(effective, review_ratings or {})
+    status, confidence = decide_status(verdict.probabilities, effective, age_hours, t, disagreement)
+    return JudgeResult(status, confidence, verdict.probabilities, judgments, expected, effective, disagreement)
 
 
 def would_change_if(status: Status, expected: list[ExpectedEvidence]) -> str | None:

@@ -30,13 +30,19 @@ async def cascade_signals(
     passages: list[Passage] | None = None,
     judgments: list[PassageJudgment] | None = None,
     min_prob: float = 0.5,
+    account_handle: str | None = None,
 ) -> dict:
-    stats = await store.similar_claim_stats(embedding, embedding_model, now - timedelta(days=7), now, threshold)
+    stats = await store.similar_claim_stats(
+        embedding, embedding_model, now - timedelta(days=7), now, threshold, account_handle=account_handle
+    )
     signals: dict = {
         "similar_submissions_24h": stats["count_24h"],
         "similar_submissions_7d": stats["count_7d"],
         "first_seen": stats["first_seen"].isoformat() if stats["first_seen"] else now.isoformat(),
     }
+    if stats.get("accounts_7d"):
+        # Distinct accounts (from screenshots) posting this rumour in 7 days: many accounts = a spreading cascade.
+        signals["distinct_accounts_7d"] = stats["accounts_7d"]
     if passages is not None and judgments is not None:
         tiers = support_by_tier(passages, judgments, min_prob)
         signals["support_by_tier"] = tiers

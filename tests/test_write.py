@@ -107,6 +107,64 @@ async def test_labelled_claim_quote_dropped_under_fails_status_only():
     assert len(r.kept) == 1
 
 
+class _Translator:
+    model_version = "fake"
+
+    def __init__(self, table):
+        self.table = table
+
+    async def translate(self, text, source, target="en"):
+        return self.table[text]
+
+
+class _NLI:
+    """Entails exactly the (premise, hypothesis) hypotheses listed."""
+
+    model_version = "fake"
+
+    def __init__(self, entailed):
+        self.entailed = entailed
+
+    async def score(self, pairs):
+        from app.models.schemas import NLIScore
+
+        return [NLIScore(entailment=0.9 if h in self.entailed else 0.1, neutral=0.05, contradiction=0.05)
+                for _, h in pairs]
+
+
+async def test_summary_translated_only_when_the_translation_is_verified():
+    from app.pipeline.write import VerifyReport, localize_summary
+    from app.models.schemas import SummarySentence
+
+    en = passage("p1", text="Nashik police confirmed the footbridge collapsed on Sunday.").model_copy(update={"language": "en"})
+    other = passage("p2", text="Mumbai airport is operating normally.").model_copy(update={"language": "en"})
+    report = VerifyReport(
+        kept=[SummarySentence(sentence="Nashik police confirmed the footbridge collapsed on Sunday.", sources=["src_p1"]),
+              SummarySentence(sentence="Mumbai airport is operating normally.", sources=["src_p2"])],
+        cited_passages=[en, other],
+    )
+    good, bad = "नाशिक पोलिसांनी पूल रविवारी कोसळल्याची पुष्टी केली.", "मुंबई विमानतळ बंद आहे."
+    tr = _Translator({report.kept[0].sentence: good, report.kept[1].sentence: bad})
+    summary, log = await localize_summary(report, tr, _NLI({good}), 0.5, "mr")
+    assert [s.sentence for s in summary] == [good, report.kept[1].sentence]  # unverified translation not shown
+    assert [s.sources for s in summary] == [["src_p1"], ["src_p2"]]
+    assert [entry["kept"] for entry in log] == ["translation", "original"]
+    # Same language as the post: untouched, no translation call.
+    same, log = await localize_summary(report, _Translator({}), _NLI(set()), 0.5, "en")
+    assert same == report.kept and log == []
+
+
+async def test_translated_summary_must_not_restate_the_claim():
+    from app.pipeline.write import VerifyReport, localize_summary
+    from app.models.schemas import SummarySentence
+
+    p = passage("p1", text="A debunk text.").model_copy(update={"language": "en"})
+    report = VerifyReport(kept=[SummarySentence(sentence="A debunk text.", sources=["src_p1"])], cited_passages=[p])
+    restated = "विमानतळ एका आठवड्यासाठी बंद आहे."
+    claim = "Mumbai airport is closed for a week."
+    summary, log = await localize_summary(report, _Translator({"A debunk text.": restated}), _NLI({restated, claim}),
+                                          0.5, "mr", claim_text=claim, status="CONTRADICTED")
+    assert summary == report.kept and log[0]["reason"] == "restates the claim"
 async def test_marathi_quote_is_shown_in_english_and_verified_against_the_original():
     from app.adapters.mock import MockTranslator
     from app.pipeline.write import to_english
@@ -163,3 +221,16 @@ async def test_undetectable_language_is_dropped_and_romanized_hindi_is_translate
     hi = passage("h", text="Mumbai airport ek hafte ke liye band hai.").model_copy(update={"language": "hi"})
     out = await to_english([DraftSentence(sentence=hi.text, passage_ids=["h"])], [hi], MockTranslator())
     assert [x.sentence for x in out] == ["Mumbai airport is closed for a week."]
+
+
+async def test_localize_translates_the_english_summary_even_when_the_evidence_is_marathi():
+    # After to_english every verified sentence is English, whatever the passage language.
+    from app.models.schemas import SummarySentence
+    from app.pipeline.write import VerifyReport, localize_summary
+
+    mr = passage("p1", text="नाशिक पोलिसांनी पूल रविवारी कोसळल्याची पुष्टी केली.").model_copy(update={"language": "mr"})
+    english = "Nashik police confirmed the bridge collapsed on Sunday."
+    report = VerifyReport(kept=[SummarySentence(sentence=english, sources=["src_p1"])], cited_passages=[mr])
+    back = "नाशिक पोलिसांनी पूल रविवारी कोसळल्याची पुष्टी केली."
+    summary, log = await localize_summary(report, _Translator({english: back}), _NLI({back}), 0.5, "mr")
+    assert [s.sentence for s in summary] == [back] and log[0]["kept"] == "translation"

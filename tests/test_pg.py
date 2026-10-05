@@ -2,6 +2,7 @@
 TEST_DATABASE_URL=postgresql+asyncpg://fact:fact@localhost:5432/fact_test pytest tests/test_pg.py
 """
 
+import asyncio
 import os
 from datetime import timedelta
 
@@ -97,6 +98,21 @@ async def test_upsert_document_replaces_passages(db, whitelist):
     await upsert_document(engine, t, full_text="a b", chunks=[ChunkIn("p1", "a", v), ChunkIn("p2", "b", v)], **kw)
     await upsert_document(engine, t, full_text="c", chunks=[ChunkIn("p3", "c", v)], **kw)
     assert await passage_count(engine, t) == 1
+
+
+async def test_search_carries_claim_review_rating(db, whitelist):
+    engine, t = db
+    ids = await sync_sources(engine, t, whitelist)
+    entry = whitelist.lookup("https://factcheck-desk.mock.example/")
+    emb = MockEmbedder(DIM)
+    text = "The Kolhapur dam video is old and was shared out of context."
+    (v,) = await emb.embed([text])
+    await upsert_document(engine, t, source_id=ids["factcheck-desk.mock.example"], entry=entry,
+                          url="https://factcheck-desk.mock.example/dam", title="Dam", language="en", published_at=NOW,
+                          full_text=text, chunks=[ChunkIn("pfc", text, v)], embedding_model=emb.model_version,
+                          claim_review={"rating": "Misleading", "claim_reviewed": "Kolhapur dam video"})
+    (p,) = await PgSearch(engine, t, emb).search([(text, "en")], v, k=4)
+    assert p.rating == "Misleading"
 
 
 async def test_known_urls_matches_feed_links_to_redirected_urls(db, whitelist):
@@ -247,3 +263,44 @@ async def test_known_urls_keeps_identifying_query_parameters(db, whitelist):
                           full_text="a", chunks=[ChunkIn("p1", "a", v)], embedding_model="mock-1")
     feed = ["https://wire.mock.example/show.aspx?prid=1&utm_source=rss", "https://wire.mock.example/show.aspx?prid=2"]
     assert await known_urls(engine, t, feed, ids["wire.mock.example"]) == {feed[0]}
+
+
+async def test_rate_limit_is_shared_across_workers(db):
+    from app.api.security import PgRateLimiter
+
+    engine, t = db
+    # Two limiters on one database = two API worker processes.
+    a, b = PgRateLimiter(engine, t.rate_limit_hits, 3), PgRateLimiter(engine, t.rate_limit_hits, 3)
+    results = await asyncio.gather(*(lim.check("key:abc") for lim in (a, b, a, b, a)))
+    assert sum(r is None for r in results) == 3  # concurrent checks never over-admit
+    wait = await b.check("key:abc")
+    assert wait is not None and 0 < wait <= 60
+    assert await a.check("key:other") is None
+    assert await PgRateLimiter(engine, t.rate_limit_hits, 0).check("key:abc") is None  # disabled
+
+
+async def test_rate_limit_expires_old_hits(db):
+    from app.api.security import PgRateLimiter
+
+    engine, t = db
+    hits = t.rate_limit_hits
+    async with engine.begin() as conn:
+        await conn.execute(hits.insert().values(identity="ip:gone", at=func.now() - sql("interval '2 minutes'")))
+        await conn.execute(hits.insert().values(identity="key:abc", at=func.now() - sql("interval '2 minutes'")))
+    assert await PgRateLimiter(engine, hits, 1).check("key:abc") is None  # the old hit no longer counts
+    async with engine.connect() as conn:
+        assert (await conn.execute(select(hits.c.identity))).scalars().all() == ["key:abc"]
+
+
+async def test_similar_claim_stats_counts_distinct_accounts(db):
+    engine, t = db
+    store = PgStore(engine, t)
+    (v,) = await MockEmbedder(DIM).embed(["Mumbai airport is closed for a week"])
+    await store.create_check("chk1", "screenshot", {"created_at": NOW})
+    for i, handle in enumerate(["@alpha", "Alpha", "@beta", None]):
+        await store.save_claim("chk1", f"c{i}", _result(Status.CONTRADICTED), v, "mock-1", [], [], {}, None,
+                               created_at=NOW, account_handle=handle)
+    since = NOW - timedelta(days=7)
+    assert (await store.similar_claim_stats(v, "mock-1", since, NOW, 0.9))["accounts_7d"] == 2
+    assert (await store.similar_claim_stats(v, "mock-1", since, NOW, 0.9, account_handle="@ALPHA"))["accounts_7d"] == 2
+    assert (await store.similar_claim_stats(v, "mock-1", since, NOW, 0.9, account_handle="@gamma"))["accounts_7d"] == 3

@@ -69,6 +69,7 @@ def review_passage(hit: FactCheckHit, whitelist: Whitelist) -> Passage | None:
         published_at=hit.review_date,
         text=text,
         relevance=1.0,
+        rating=hit.textual_rating,
     )
 
 

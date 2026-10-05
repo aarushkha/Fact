@@ -44,6 +44,7 @@ class Tables:
     stage_runs: Table
     claims: Table
     verdicts: Table
+    rate_limit_hits: Table
     dim: int
 
 
@@ -130,6 +131,7 @@ def build_tables(dim: int) -> Tables:
         Column("embedding_model", Text, nullable=False),
         Column("signals", JSONB(none_as_null=True)),  # rumour-cascade signals at check time
         Column("post_date", tz),  # resolved post date; rechecks reuse it
+        Column("account_handle", Text),  # normalised poster handle read from a screenshot (cascade signals)
         Column("created_at", tz, server_default=func.now(), nullable=False),
         Index("ix_claims_entity_keys", "entity_keys", postgresql_using="gin"),
         Index(
@@ -152,7 +154,15 @@ def build_tables(dim: int) -> Tables:
         Column("created_at", tz, server_default=func.now(), nullable=False),
         Index("ix_verdicts_due", "recheck_at", postgresql_where=text("superseded_at IS NULL")),
     )
-    return Tables(md, sources, documents, passages, checks, stage_runs, claims, verdicts, dim)
+    # Shared sliding-window rate limit: one row per accepted request, so every API worker sees the same budget.
+    rate_limit_hits = Table(
+        "rate_limit_hits", md,
+        Column("id", BigInteger, primary_key=True),
+        Column("identity", Text, nullable=False),
+        Column("at", tz, server_default=func.now(), nullable=False),
+        Index("ix_rate_limit_hits_identity_at", "identity", "at"),
+    )
+    return Tables(md, sources, documents, passages, checks, stage_runs, claims, verdicts, rate_limit_hits, dim)
 
 
 def make_engine(database_url: str) -> AsyncEngine:

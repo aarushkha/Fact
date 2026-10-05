@@ -6,4 +6,5 @@ sources:
   - {name: "National Wire Service (MOCK)", domain: wire.mock.example, language: en, tier: 1, kind: wire}
   - {name: "Daily Reporter (MOCK)", domain: daily-reporter.mock.example, language: en, tier: 2, kind: outlet}
   - {name: "FactCheck Desk (MOCK)", domain: factcheck-desk.mock.example, language: en, tier: 2, kind: factchecker}
+  - {name: "Second Look Checks (MOCK)", domain: second-look.mock.example, language: hi, tier: 2, kind: factchecker}
   - {name: "Viral Aggregator (MOCK)", domain: viral-agg.mock.example, language: hi, tier: 3, kind: aggregator}

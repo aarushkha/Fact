@@ -34,10 +34,10 @@ from app.pipeline.context import StageContext
 from app.pipeline.extract import extract_claims
 from app.pipeline.ingest import ingest
 from app.pipeline.judge import Thresholds, claim_age_hours, judge_claim, recheck_at, unverified_status, would_change_if
-from app.pipeline.match import decisive_factcheck, lookup_cache, match_factchecks
+from app.pipeline.match import decisive_factcheck, lookup_cache, map_rating, match_factchecks
 from app.pipeline.normalize import normalize
 from app.pipeline.retrieve import rank_passages, retrieve
-from app.pipeline.write import needs_english, to_english, verify_sentences
+from app.pipeline.write import localize_summary, needs_english, to_english, verify_sentences
 from app.sources import Whitelist
 from app.text import document_key
 
@@ -191,7 +191,8 @@ class Pipeline:
         age = claim_age_hours(ingested.post_date, now)
         excluded = {document_key(u) for u in inp.exclude_urls}
         outcomes = await asyncio.gather(
-            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded, ingested.post_date)
+            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded, ingested.post_date,
+                          ingested.account_handle)
               for c in claims)
         )
 
@@ -221,12 +222,12 @@ class Pipeline:
         await ctx.run("store", lambda: self.store.finish_check(response), inputs={"claims": len(results)})
         await emit("done", response.model_dump(mode="json"))
 
-    async def _signals(self, ctx, cid, embedding, now, passages=None, judgments=None) -> dict:
+    async def _signals(self, ctx, cid, embedding, now, passages=None, judgments=None, account_handle=None) -> dict:
         return await ctx.run(
             "cascade",
             lambda: cascade_signals(
                 self.store, embedding, self.a.embedder.model_version, now, self.settings.cascade_similarity_threshold,
-                passages, judgments, self.settings.passage_relevance_threshold,
+                passages, judgments, self.settings.passage_relevance_threshold, account_handle,
             ),
             claim_id=cid,
         )
@@ -242,9 +243,11 @@ class Pipeline:
         emit: Emit,
         excluded: set[str] = frozenset(),
         post_date: datetime | None = None,
+        account_handle: str | None = None,
     ) -> tuple[ClaimResult, list[SourceOut]]:
         try:
-            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit, excluded, post_date)
+            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit, excluded, post_date,
+                                           account_handle)
         except Exception as exc:
             # Abstain on failure; never guess.
             log.exception("claim %s failed", claim.id)
@@ -271,6 +274,7 @@ class Pipeline:
         emit: Emit,
         excluded: set[str] = frozenset(),
         post_date: datetime | None = None,
+        account_handle: str | None = None,
     ) -> tuple[ClaimResult, list[SourceOut]]:
         a, s = self.a, self.settings
         cid = claim.id
@@ -319,13 +323,14 @@ class Pipeline:
                 "claim_id": cid, "kind": "cache", "similarity": round(cached.similarity, 4),
                 "from_check_id": cached.check_id,
             })
-            signals = await self._signals(ctx, cid, embedding, now)
+            signals = await self._signals(ctx, cid, embedding, now, account_handle=account_handle)
             # Every submission is stored, so repeat submissions of a rumour can be counted.
             await ctx.run(
                 "store",
                 lambda: self.store.save_claim(
                     ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, cached.sources,
                     model_versions, None, post_date=post_date, signals=signals, created_at=now,
+                    account_handle=account_handle,
                 ),
                 inputs={"status": res.status, "from_cache": True}, claim_id=cid,
             )
@@ -344,8 +349,10 @@ class Pipeline:
             status, confidence = decisive.status, s.factcheck_hit_confidence
             passages = [decisive.passage]
             judged_passages = judged_judgments = None
+            disagreement = None
             expected = [ExpectedEvidence(item="Published fact-check by a whitelisted fact-checker", found=True)]
         else:
+            disagreement = None
             # Stage 5: retrieve.
             passages = await ctx.run(
                 "retrieve",
@@ -360,20 +367,35 @@ class Pipeline:
             await emit("evidence", {"claim_id": cid, "passages": [passage_brief(p) for p in passages]})
 
             # Stage 6: judge.
+            # Fact-check reviews among the evidence (Fact Check API hits and crawled ClaimReview pages).
+            review_ratings = {p.id: st for p in passages if p.rating and (st := map_rating(p.rating)) is not None}
             judged = await ctx.run(
                 "judge",
-                lambda: judge_claim(claim, passages, a.classifier, age, self.thresholds),
+                lambda: judge_claim(claim, passages, a.classifier, age, self.thresholds, review_ratings),
                 inputs={"claim": claim, "passage_ids": [p.id for p in passages], "age_hours": age},
                 model_version=lambda: a.classifier.model_version, claim_id=cid,
                 log_output=lambda r: {
                     "status": r.status, "confidence": r.confidence, "probabilities": r.probabilities,
                     "judgments": r.judgments, "expected": r.expected,
                     "effective_passage_ids": [p.id for _, p in r.effective],
+                    "factcheck_disagreement": sorted(r.disagreement),
                 },
             )
             status, confidence, expected = judged.status, judged.confidence, judged.expected
             judged_passages, judged_judgments = passages, judged.judgments
             passages = [p for _, p in judged.effective]
+            if judged.disagreement:
+                # Show the disagreeing reviews: one per rating goes first, so the writer quotes each of them.
+                firsts = {}
+                for p in passages:
+                    firsts.setdefault(review_ratings.get(p.id), p)
+                firsts.pop(None, None)
+                lead = list(firsts.values())
+                passages = lead + [p for p in passages if p not in lead]
+                disagreement = list({
+                    p.url: {"publisher": p.publisher, "rating": p.rating, "status": review_ratings[p.id], "url": p.url}
+                    for p in passages if p.id in review_ratings
+                }.values())
 
         # Stage 7: write + verify. Only best-tier relevant passages are offered to the writer.
         drafts = await ctx.run(
@@ -382,7 +404,7 @@ class Pipeline:
             inputs={"status": status, "passage_ids": [p.id for p in passages]},
             model_version=lambda: a.llm.model_version, claim_id=cid,
         )
-        if any(needs_english(d, passages) for d in drafts):  # summaries are shown in English
+        if any(needs_english(d, passages) for d in drafts):  # normalize to English before verification and optional localization
             drafts = await ctx.run(
                 "translate_summary", lambda: to_english(drafts, passages, a.translator),
                 inputs={"drafts": drafts}, model_version=lambda: a.translator.model_version, claim_id=cid,
@@ -395,10 +417,21 @@ class Pipeline:
             inputs={"drafts": drafts}, model_version=lambda: a.nli.model_version, claim_id=cid,
         )
 
+        summary = report.kept
+        if s.summary_language == "post" and report.kept and languages:
+            summary, _ = await ctx.run(
+                "localize",
+                lambda: localize_summary(report, a.translator, a.nli, s.nli_entailment_threshold, languages[0],
+                                         claim_text=claim.text_en, status=status,
+                                         restatement_threshold=s.nli_restatement_threshold),
+                inputs={"target": languages[0], "sentences": len(report.kept)},
+                model_version=lambda: f"translator={a.translator.model_version};nli={a.nli.model_version}",
+                claim_id=cid, log_output=lambda r: {"log": r[1]},
+            )
         res = result(
             status=status,
             confidence=round(confidence, 4),
-            summary=report.kept,
+            summary=summary,
             expected_evidence=expected,
             would_change_if=would_change_if(status, expected),
         )
@@ -406,17 +439,21 @@ class Pipeline:
         sources = list({src.id: src for src in sources}.values())
 
         # Stage 8: store.
-        signals = await self._signals(ctx, cid, embedding, now, judged_passages, judged_judgments)
+        signals = await self._signals(ctx, cid, embedding, now, judged_passages, judged_judgments, account_handle)
         claim_recheck = recheck_at([status], now, s.recheck_too_early_hours, s.recheck_evidence_missing_days)
         await ctx.run(
             "store",
             lambda: self.store.save_claim(
                 ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, sources,
                 model_versions, claim_recheck, post_date=post_date, signals=signals, created_at=now,
+                account_handle=account_handle,
             ),
             inputs={"status": status}, claim_id=cid,
         )
-        await emit("verdict", {"claim_id": cid, "claim": res, "sources": sources, "signals": signals})
+        verdict_event = {"claim_id": cid, "claim": res, "sources": sources, "signals": signals}
+        if disagreement:
+            verdict_event["factcheck_disagreement"] = disagreement
+        await emit("verdict", verdict_event)
         return res, sources
 
 
