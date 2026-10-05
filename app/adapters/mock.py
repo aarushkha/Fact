@@ -217,8 +217,8 @@ class MockClassifier:
         if len(shared) < 2 or overlap_ratio(claim.text_en, passage.text) < 0.5:
             return PassageJudgment(passage_id=passage.id, stance=Stance.IRRELEVANT, probability=0.9)
         if _has_cue(passage.text, CONTEXT_CUES) or _has_cue(passage.text, CONTRADICTION_CUES):
-            return PassageJudgment(passage_id=passage.id, stance=Stance.CONTRADICTS, probability=0.9)
-        return PassageJudgment(passage_id=passage.id, stance=Stance.SUPPORTS, probability=0.9)
+            return PassageJudgment(passage_id=passage.id, stance=Stance.CONTRADICTS, probability=0.9, same_event=0.9)
+        return PassageJudgment(passage_id=passage.id, stance=Stance.SUPPORTS, probability=0.9, same_event=0.9)
 
     async def expected_evidence(
         self, claim: Claim, passages: list[Passage], judgments: list[PassageJudgment]

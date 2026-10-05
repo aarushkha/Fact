@@ -36,6 +36,7 @@ def test_metrics():
     ]
     s = summarize(rows)
     assert s["accuracy"] == 0.5 and s["confident_wrong_rate"] == 0.25 and s["abstain_rate"] == 0.25
+    assert s["direction_wrong_rate"] == 0.25  # said CONTRADICTED for a CONFIRMED label
     assert s["citation_precision"] == 0.8  # 4 kept of 5 written
     assert s["latency_ms_p50"] == 10.0 and s["latency_ms_p95"] == 30.0
     assert {b["bucket"] for b in s["calibration"]} == {"0.6-0.7", "0.9-1.0"}
@@ -60,3 +61,9 @@ def test_factcheck_set_is_real_and_guarded():
     assert len(rows) == 200 and not any(r["synthetic"] for r in rows)
     assert all(r["exclude_urls"] == [r["review_url"]] and r["single_claim"] for r in rows)
     assert {r["language"] for r in rows} == {"en", "hi", "mr"}
+
+
+def test_contradicted_vs_misleading_is_not_direction_wrong():
+    rows = [row("CONTRADICTED", "MISLEADING_CONTEXT", 0.9)]
+    s = summarize(rows)
+    assert s["confident_wrong_rate"] == 1.0 and s["direction_wrong_rate"] == 0.0

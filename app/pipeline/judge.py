@@ -31,6 +31,18 @@ class Thresholds:
     confidence: float
     passage_relevance: float
     too_early_window_hours: float
+    same_event: float = 0.6
+
+
+def apply_same_event_gate(j: PassageJudgment, threshold: float) -> PassageJudgment:
+    """A passage about a different incident is irrelevant, however strongly it 'contradicts'.
+
+    Debunks of other viral videos share vocabulary with almost any viral claim; without this gate they
+    were the evidence behind most confident errors on real fact-check data.
+    """
+    if j.same_event is not None and j.same_event < threshold and j.stance != Stance.IRRELEVANT:
+        return j.model_copy(update={"stance": Stance.IRRELEVANT, "probability": 1 - j.same_event})
+    return j
 
 
 def claim_age_hours(post_date: datetime | None, now: datetime) -> float | None:
@@ -110,7 +122,8 @@ async def judge_claim(
     age_hours: float | None,
     t: Thresholds,
 ) -> JudgeResult:
-    judgments = list(await asyncio.gather(*(classifier.judge_passage(claim, p) for p in passages)))
+    raw = await asyncio.gather(*(classifier.judge_passage(claim, p) for p in passages))
+    judgments = [apply_same_event_gate(j, t.same_event) for j in raw]
     expected = await classifier.expected_evidence(claim, passages, judgments)
     # The claim-level judge sees only passages judged relevant; irrelevant ones are noise.
     relevant_ids = {j.passage_id for j in judgments if j.stance != Stance.IRRELEVANT}

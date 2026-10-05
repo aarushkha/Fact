@@ -9,6 +9,8 @@ Rows may set "exclude_urls" (evidence ignored for that row, e.g. the fact-check 
 
 Each example is scored on its FIRST claim (eval inputs are single-claim posts).
 - confident-wrong rate: wrong and not abstained (abstained = UNVERIFIED_*), over all examples
+- direction-wrong rate: answered "holds" (CONFIRMED) when the label says "fails" (CONTRADICTED /
+  MISLEADING_CONTEXT) or the reverse: the dangerous subset of confident-wrong
 - abstain rate, accuracy
 - citation precision: share of written sentences that pass the NLI check (kept / (kept + dropped))
 - calibration: accuracy per confidence bucket for non-abstained answers, plus ECE
@@ -42,6 +44,8 @@ from app.sources import load_whitelist_file
 
 DEFINITIVE = {s.value for s in DEFINITIVE_STATUSES}
 ABSTAIN = {s.value for s in UNVERIFIED_STATUSES}
+# "Direction" of a status: does it say the claim holds or not? Wrong direction = the dangerous error.
+DIRECTION = {"CONFIRMED": "holds", "CONTRADICTED": "fails", "MISLEADING_CONTEXT": "fails"}
 BUCKETS = [(0.0, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.01)]
 
 
@@ -141,6 +145,10 @@ def summarize(rows: list[Row], threshold: float | None = None) -> dict:
         flags = [at_threshold(r, threshold) for r in rows]
     else:
         flags = [(r.abstained, r.confident_wrong) for r in rows]
+    direction_wrong = sum(
+        1 for r, (ab, _) in zip(rows, flags)
+        if not ab and r.predicted in DIRECTION and r.expected in DIRECTION and DIRECTION[r.predicted] != DIRECTION[r.expected]
+    )
     answered = [r for r, (ab, _) in zip(rows, flags) if not ab]
     kept = sum(r.sentences_kept for r in rows)
     written = kept + sum(r.sentences_dropped for r in rows)
@@ -158,6 +166,7 @@ def summarize(rows: list[Row], threshold: float | None = None) -> dict:
         "n": len(rows),
         "accuracy": round(sum(r.correct for r in rows) / n, 3),
         "confident_wrong_rate": round(sum(cw for _, cw in flags) / n, 3),
+        "direction_wrong_rate": round(direction_wrong / n, 3),
         "abstain_rate": round(sum(ab for ab, _ in flags) / n, 3),
         "citation_precision": round(kept / written, 3) if written else None,
         "calibration": calib,
@@ -236,7 +245,7 @@ async def main_async(args: argparse.Namespace) -> int:
         print(f"trace: {tpath}")
 
     m = report.get("metrics") or report["at_configured_threshold"]
-    print(f"\nthreshold={m['threshold']}  n={m['n']}  accuracy={m['accuracy']}  confident_wrong={m['confident_wrong_rate']}  "
+    print(f"\nthreshold={m['threshold']}  n={m['n']}  accuracy={m['accuracy']}  confident_wrong={m['confident_wrong_rate']}  direction_wrong={m['direction_wrong_rate']}  "
           f"abstain={m['abstain_rate']}  citation_precision={m['citation_precision']}  ece={m['ece']}  "
           f"p50={m['latency_ms_p50']}ms  p95={m['latency_ms_p95']}ms  errors={m['errors']}")
     for b in m["calibration"]:

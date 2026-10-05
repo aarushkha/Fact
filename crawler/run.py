@@ -146,7 +146,9 @@ async def crawl_source(
                 review = extract_claim_review(r.text)
                 if review:  # a fact-check's structured verdict becomes its own, searchable passage
                     chunks.append(claim_review_text(review))
-                vectors = await embedder.embed(chunks)
+                title = article.title or c.title
+                # Embed with the title so generic chunks ("Hence the claim is false") keep their subject.
+                vectors = await embedder.embed([f"{title}\n{ch}" if title else ch for ch in chunks])
                 await upsert_document(
                     engine, tables,
                     source_id=source_id, entry=entry, url=final_url, title=article.title or c.title,

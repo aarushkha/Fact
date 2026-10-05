@@ -193,16 +193,26 @@ CLAIM_TYPE_SCHEMA = {
     "required": ["probabilities"],
 }
 
+SAME_EVENT_QUESTION = (
+    "Is the passage (read together with its article title) about the same specific incident, image, video or "
+    "quote as the claim (same people, place and event), not just a similar topic or another viral video?"
+)
+SAME_EVENT_CRITERIA = {
+    "true": "Yes, the passage is about this exact incident/media/quote.",
+    "false": "No, it is about a different incident, media item or quote, even if similar.",
+}
+
 STANCE_SCHEMA = {
     "type": "object",
     "properties": {
+        "same_event": {"type": "number", "minimum": 0, "maximum": 1, "description": SAME_EVENT_QUESTION},
         "probabilities": {
             "type": "object",
             "properties": {k: {"type": "number", "minimum": 0, "maximum": 1} for k in STANCE_CRITERIA},
             "required": list(STANCE_CRITERIA),
         }
     },
-    "required": ["probabilities"],
+    "required": ["same_event", "probabilities"],
 }
 
 EXPECTED_SCHEMA = {

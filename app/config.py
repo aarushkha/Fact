@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     confidence_threshold: float = 0.6  # below this, abstain (UNVERIFIED_*)
     claim_type_threshold: float = 0.6  # min prob to mark a claim not-checkable
     passage_relevance_threshold: float = 0.5  # min prob for supports/contradicts to count
+    same_event_threshold: float = 0.6  # min P(passage is about the same incident) for it to count at all
     cache_similarity_threshold: float = 0.92
     cascade_similarity_threshold: float = 0.85  # "same rumour" for counting repeat submissions
     factcheck_similarity_threshold: float = 0.85

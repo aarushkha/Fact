@@ -100,7 +100,7 @@ class PgSearch:
                 return []
             rows = await conn.execute(
                 select(
-                    p.c.id, p.c.text, p.c.language, d.c.url, d.c.published_at,
+                    p.c.id, p.c.text, p.c.language, d.c.url, d.c.published_at, d.c.title,
                     s.c.name.label("publisher"), s.c.tier, s.c.kind,
                 )
                 .select_from(base_from.join(s, s.c.id == d.c.source_id))
@@ -119,6 +119,7 @@ class PgSearch:
                 language=by_id[pid].language,
                 published_at=by_id[pid].published_at,
                 text=by_id[pid].text,
+                title=by_id[pid].title,
                 relevance=round(fused[pid], 4),
             )
             for pid in top

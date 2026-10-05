@@ -188,14 +188,16 @@ async def test_jev_request_format_and_stance():
     def handler(req: httpx.Request):
         seen["auth"], seen["body"] = req.headers["authorization"], json.loads(req.content)
         return jev_answer({"stance": {"type": "choice", "choice": "contradicts", "confidence": 0.9,
-                                      "probabilities": {"supports": 0.05, "contradicts": 0.9, "irrelevant": 0.05}}})
+                                      "probabilities": {"supports": 0.05, "contradicts": 0.9, "irrelevant": 0.05}},
+                           "same_event": {"type": "noul", "noul": 0.8}})
 
     jev = JevClassifier("or-key", client=transport(handler))
     j = await jev.judge_passage(claim(), passage("p1", text="Airport operating normally."))
     assert seen["auth"] == "Bearer or-key" and seen["body"]["model"] == "typesafe/jev-1.13"
     q = seen["body"]["questions"]["stance"]
     assert q["type"] == "choice" and set(q["criteria"]) == {"supports", "contradicts", "irrelevant"}
-    assert j.stance == Stance.CONTRADICTS and j.probability == pytest.approx(0.9)
+    assert seen["body"]["questions"]["same_event"]["type"] == "noul"
+    assert j.stance == Stance.CONTRADICTS and j.probability == pytest.approx(0.9) and j.same_event == 0.8
     assert jev.model_version == "openrouter/typesafe/jev-1.13-20260917"
 
 

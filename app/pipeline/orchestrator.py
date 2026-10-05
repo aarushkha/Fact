@@ -90,6 +90,7 @@ class Pipeline:
             confidence=settings.confidence_threshold,
             passage_relevance=settings.passage_relevance_threshold,
             too_early_window_hours=settings.too_early_window_hours,
+            same_event=settings.same_event_threshold,
         )
 
     # ------------------------------------------------------------------ public
