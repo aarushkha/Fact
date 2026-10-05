@@ -54,7 +54,7 @@ Pipeline (`app/pipeline/orchestrator.py` chains the stages; every stage is logge
 
 - `app/pipeline/judge.py`: **the rules live here, in code**. `apply_same_event_gate`,
   `effective_judgments` (best tier only), `decide_status` (evidence guards, threshold, age split).
-- `app/pipeline/write.py`: NLI verification over premise windows (`best_windows`). Under a "fails"
+- `app/pipeline/write.py`: English summaries (`to_english`), NLI verification over premise windows (`best_windows`). Under a "fails"
   status it also drops sentences that entail the claim (`NLI_RESTATEMENT_THRESHOLD`): restatements.
 - `app/adapters/`: one file per provider. `factory.py` wires them from `Settings`. `mock.py` and
   `mock_data/` hold deterministic, keyword-driven mocks over a fictional corpus (`*.mock.example`).
@@ -130,8 +130,14 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
     also held real context, so don't lower it blindly), and a claim-label rule ("Claim:", "Claim
     Review :", "दावा:"; 30 more, all true restatements). 25 of those 30 came from our own ClaimReview
     passage, which split as `Claim reviewed: "X". Rating: False.`; it is now one verdict-first sentence
-    (`verdict_sentence`). Marathi summaries are mostly empty even without the guards (6 of 10 rows):
-    citation NLI rarely passes there. The mock NLI is word overlap plus a negation/"is false" check.
+    (`verdict_sentence`). The mock NLI is word overlap plus a negation/"is false" check.
+15. **mDeBERTa can't do Marathi→Marathi NLI; summaries are English.** A Marathi sentence against itself
+    scored 0.27-0.36 entailment (Hindi 0.59, English 0.94), so every verbatim Marathi quote failed the
+    citation check (6 of 10 Marathi rows had empty summaries). A Marathi passage → English sentence
+    scored 0.68-0.85. So `write.to_english` translates a non-English quote (Sarvam) and NLI checks the
+    English sentence against the *original* passage (windows picked by `source_sentence`). Summaries
+    default to English; a quote whose translation fails is dropped. `SUMMARY_LANGUAGE=post` can then
+    localize verified English sentences, retaining the English version if the translation fails NLI.
 13. **Feeds carry their own language.** Newschecker, Vishvas and Fact Crescendo serve several languages
     from one domain; a feed whose language differs from its entry is written `{url, language}` in
     `sources.yaml` (checked against the feed's articles, not just its `<language>` tag: Fact
