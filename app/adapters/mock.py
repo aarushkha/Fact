@@ -217,8 +217,8 @@ class MockClassifier:
         if len(shared) < 2 or overlap_ratio(claim.text_en, passage.text) < 0.5:
             return PassageJudgment(passage_id=passage.id, stance=Stance.IRRELEVANT, probability=0.9)
         if _has_cue(passage.text, CONTEXT_CUES) or _has_cue(passage.text, CONTRADICTION_CUES):
-            return PassageJudgment(passage_id=passage.id, stance=Stance.CONTRADICTS, probability=0.9)
-        return PassageJudgment(passage_id=passage.id, stance=Stance.SUPPORTS, probability=0.9)
+            return PassageJudgment(passage_id=passage.id, stance=Stance.CONTRADICTS, probability=0.9, same_event=0.9)
+        return PassageJudgment(passage_id=passage.id, stance=Stance.SUPPORTS, probability=0.9, same_event=0.9)
 
     async def expected_evidence(
         self, claim: Claim, passages: list[Passage], judgments: list[PassageJudgment]
@@ -286,8 +286,21 @@ class MockEmbedder:
         return [self._embed_one(t) for t in texts]
 
 
+NEGATIONS = {"not", "no", "never", "nor", "isn't", "wasn't", "aren't", "didn't", "doesn't", "नहीं", "नाही"}
+# Verdict words a debunk uses instead of "not" ("The claim that ... is false"): they oppose the claim too.
+CORRECTIVES = {"false", "fake", "untrue", "misleading", "hoax", "baseless", "debunked",
+               "फर्जी", "झूठा", "झूठी", "भ्रामक", "खोटा", "खोटी", "दिशाभूल"}
+
+
+def _negated(text: str) -> bool:
+    words = set(re.findall(r"[\w\u0900-\u097F']+", text.lower()))  # tokens() drops "not"
+    return bool((NEGATIONS | CORRECTIVES) & words)
+
+
 class MockNLIVerifier:
-    """Entailment = share of the hypothesis' content words present in the premise."""
+    """Entailment = share of the hypothesis' content words present in the premise, unless exactly one
+    of the two is negated or corrective ("not", "is false"): then the overlap counts as contradiction
+    (a real NLI model sees the polarity)."""
 
     model_version = MOCK_VERSION
 
@@ -295,7 +308,10 @@ class MockNLIVerifier:
         out = []
         for premise, hypothesis in pairs:
             r = overlap_ratio(hypothesis, premise)
-            out.append(NLIScore(entailment=r, neutral=1 - r, contradiction=0.0))
+            if _negated(premise) != _negated(hypothesis):
+                out.append(NLIScore(entailment=0.0, neutral=1 - r, contradiction=r))
+            else:
+                out.append(NLIScore(entailment=r, neutral=1 - r, contradiction=0.0))
         return out
 
 
@@ -353,15 +369,22 @@ class MockSearch:
         return out[:k]
 
 
+def _png_chunk(ctype: bytes, body: bytes) -> bytes:
+    return struct.pack(">I", len(body)) + ctype + body + struct.pack(">I", zlib.crc32(ctype + body) & 0xFFFFFFFF)
+
+
+def add_png_text(png: bytes, meta: dict[str, str]) -> bytes:
+    """Insert `meta` as iTXt chunks before IEND, so the mock vision reader can 'read' a real screenshot."""
+    if not png.startswith(b"\x89PNG\r\n\x1a\n") or not png.endswith(_png_chunk(b"IEND", b"")):
+        raise ValueError("not a PNG ending in IEND")
+    text = b"".join(
+        _png_chunk(b"iTXt", k.encode("latin-1") + b"\x00\x00\x00\x00\x00" + v.encode("utf-8")) for k, v in meta.items()
+    )
+    return png[:-12] + text + png[-12:]
+
+
 def make_mock_png(meta: dict[str, str]) -> bytes:
     """Build a 1x1 PNG carrying `meta` as iTXt chunks. Used for synthetic screenshots in tests/evals."""
-
-    def chunk(ctype: bytes, body: bytes) -> bytes:
-        return struct.pack(">I", len(body)) + ctype + body + struct.pack(">I", zlib.crc32(ctype + body) & 0xFFFFFFFF)
-
     ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0)
-    idat = zlib.compress(b"\x00\xff")
-    text = b"".join(
-        chunk(b"iTXt", k.encode("latin-1") + b"\x00\x00\x00\x00\x00" + v.encode("utf-8")) for k, v in meta.items()
-    )
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + text + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+    png = b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", zlib.compress(b"\x00\xff")) + _png_chunk(b"IEND", b"")
+    return add_png_text(png, meta)

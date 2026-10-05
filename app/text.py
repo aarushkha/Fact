@@ -43,3 +43,53 @@ def source_id_for(url: str) -> str:
 
 def has_devanagari(text: str) -> bool:
     return any("ऀ" <= ch <= "ॿ" for ch in text)
+
+
+_STOP_CAPS = {"The", "A", "An", "This", "That", "It", "In", "On", "At", "He", "She", "They", "We", "I", "But", "And"}
+
+
+def guess_entities(text_en: str):
+    """Heuristic entities for the Gemini-free path: capitalized words/phrases and 4-digit years."""
+    from app.models.schemas import Entity
+
+    found: dict[str, Entity] = {}
+    for m in re.finditer(r"\b(?:[A-Z][a-zA-Z]+)(?:\s+[A-Z][a-zA-Z]+)*\b|\b(?:19|20)\d{2}\b", text_en):
+        phrase = m.group(0)
+        words = [w for w in phrase.split() if w not in _STOP_CAPS]
+        if not words:
+            continue
+        phrase = " ".join(words)
+        kind = "date" if phrase.isdigit() else "other"
+        found.setdefault(phrase.lower(), Entity(text=phrase, kind=kind))
+    return list(found.values())[:10]
+
+
+def url_key(url: str) -> str:
+    """Comparable form of a URL: no scheme, www, fragment, query, trailing slash or AMP segment."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url.strip().lower())
+    host = parts.netloc[4:] if parts.netloc.startswith("www.") else parts.netloc
+    path = "/".join(seg for seg in parts.path.split("/") if seg and seg != "amp")
+    return f"{host}/{path}"
+
+
+TRACKING_PARAMS = frozenset({"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "ref_src", "amp", "cmpid", "s_cid", "ito"})
+
+
+def document_key(url: str) -> str:
+    """url_key plus the query parameters that identify a document (RBI: ...aspx?prid=63733), minus
+    tracking ones (utm_*, fbclid, ...). For "is this article already stored", where url_key's dropping
+    of the whole query would make every RBI press release look like the same page."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit
+
+    query = [(k, v) for k, v in parse_qsl(urlsplit(url.strip()).query, keep_blank_values=True)
+             if not k.lower().startswith("utm_") and k.lower() not in TRACKING_PARAMS]
+    return url_key(url) + (f"?{urlencode(sorted(query))}" if query else "")
+
+
+def verdict_sentence(rating: str, claim: str) -> str:
+    """One sentence that leads with the verdict. The old 'Claim reviewed: "X". Rating: False.' split into
+    pieces, and the summary writer quoted the false claim on its own (25 of 30 restated-claim summaries
+    on real fact-checks). With real mDeBERTa this form entails the claim far less (mean 0.26 vs 0.46)."""
+    return f'Fact-check verdict {rating} on the claim "{claim.strip().rstrip(".")}"'

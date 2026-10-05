@@ -4,33 +4,50 @@
 #       2 = original reporting (outlets doing their own reporting, fact-checkers)
 #       3 = aggregator (outlets that mostly repeat social-media posts)
 # kind: police | court | government | institution | wire | outlet | factchecker | aggregator
-# rss_url / sitemap_url: real feed URLs only; leave empty if unknown. Do not guess.
+# rss_url / sitemap_url: real feed URLs only. Every URL below returned a valid feed/sitemap on 2026-10-05.
+# A feed in another language than its entry is written {url: ..., language: ...} (checked against its articles).
 # todo: true -> entry is ignored until filled in.
+#
+# Feeds not added because they could not be verified from the build environment (HTTP 403 / timeout / none):
+# PIB, Maharashtra DGIPR (mahasamvad.in), PTI, ANI, DD News, All India Radio, ECI, BOOM, NewsMeter.
+# Add them once you confirm their feed URLs from your network.
 
 sources:
-  - name: TODO primary source (e.g. a city police press page)
-    domain: todo-primary.invalid
-    rss_url:
-    sitemap_url:
-    language: mr
-    tier: 1
-    kind: police
-    todo: true
+  # ---- tier 1: primary ----
+  # Some article pages answered HTTP 418 to the crawler from the build environment.
+  - {name: Reserve Bank of India, domain: rbi.org.in, rss_url: "https://www.rbi.org.in/pressreleases_rss.xml", language: en, tier: 1, kind: institution}
 
-  - name: TODO original-reporting outlet
-    domain: todo-outlet.invalid
-    rss_url:
-    sitemap_url:
-    language: hi
-    tier: 2
-    kind: outlet
-    todo: true
+  - {name: PIB Fact Check (Press Information Bureau), domain: pib.gov.in, language: en, tier: 1, kind: government}
 
-  - name: TODO fact-checker
-    domain: todo-factchecker.invalid
-    rss_url:
-    sitemap_url:
-    language: en
-    tier: 2
-    kind: factchecker
-    todo: true
+  # ---- tier 2: fact-checkers ----
+  - {name: Alt News, domain: altnews.in, rss_url: "https://www.altnews.in/feed/", language: en, tier: 2, kind: factchecker}
+  - {name: Factly, domain: factly.in, rss_url: "https://factly.in/feed/", language: en, tier: 2, kind: factchecker}
+  - {name: Vishvas News, domain: vishvasnews.com, rss_url: ["https://www.vishvasnews.com/feed/", {url: "https://www.vishvasnews.com/marathi/feed/", language: mr}], language: hi, tier: 2, kind: factchecker}
+  - {name: Newschecker, domain: newschecker.in, rss_url: ["https://newschecker.in/feed", {url: "https://www.newschecker.in/hi/feed", language: hi}, {url: "https://newschecker.in/mr/feed", language: mr}], language: en, tier: 2, kind: factchecker}
+  - {name: Fact Crescendo, domain: factcrescendo.com, rss_url: ["https://www.factcrescendo.com/feed/", {url: "https://marathi.factcrescendo.com/feed/", language: mr}], language: hi, tier: 2, kind: factchecker}
+  # Whitelisted without a feed (feeds blocked/empty from the build environment): their reviews still count
+  # when they arrive through the Google Fact Check API.
+  - {name: BOOM, domain: boomlive.in, language: en, tier: 2, kind: factchecker}
+  - {name: NewsMobile, domain: newsmobile.in, language: en, tier: 2, kind: factchecker}
+  - {name: NewsMeter, domain: newsmeter.in, language: en, tier: 2, kind: factchecker}
+
+  # ---- tier 2: outlets (English) ----
+  - {name: The Hindu, domain: thehindu.com, rss_url: "https://www.thehindu.com/news/national/feeder/default.rss", language: en, tier: 2, kind: outlet}
+  - {name: The Indian Express, domain: indianexpress.com, rss_url: "https://indianexpress.com/feed/", language: en, tier: 2, kind: outlet}
+  # Article pages answered HTTP 403 to the crawler from the build environment; still used for fact-check matching.
+  - {name: NDTV, domain: ndtv.com, rss_url: "https://feeds.feedburner.com/ndtvnews-india-news", language: en, tier: 2, kind: outlet}
+  - {name: India Today, domain: indiatoday.in, rss_url: "https://www.indiatoday.in/rss/1206514", language: en, tier: 2, kind: outlet}
+  - {name: The Times of India, domain: timesofindia.indiatimes.com, rss_url: "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms", language: en, tier: 2, kind: outlet}
+  - {name: Mid-day, domain: mid-day.com, rss_url: "https://www.mid-day.com/Resources/midday/rss/india-news.xml", language: en, tier: 2, kind: outlet}
+  - {name: The Quint, domain: thequint.com, rss_url: "https://www.thequint.com/stories.rss", language: en, tier: 2, kind: outlet}
+
+  # ---- tier 2: outlets (Hindi) ----
+  - {name: Aaj Tak, domain: aajtak.in, rss_url: "https://www.aajtak.in/rssfeeds/?id=home", language: hi, tier: 2, kind: outlet}
+  - {name: Dainik Bhaskar, domain: bhaskar.com, rss_url: "https://www.bhaskar.com/rss-v1--category-1061.xml", language: hi, tier: 2, kind: outlet}
+  - {name: Amar Ujala, domain: amarujala.com, rss_url: "https://www.amarujala.com/rss/breaking-news.xml", language: hi, tier: 2, kind: outlet}
+
+  # ---- tier 2: outlets (Marathi) ----
+  - {name: Loksatta, domain: loksatta.com, sitemap_url: "https://www.loksatta.com/sitemap.xml", language: mr, tier: 2, kind: outlet}
+  - {name: Lokmat, domain: lokmat.com, sitemap_url: "https://www.lokmat.com/sitemap.xml", language: mr, tier: 2, kind: outlet}
+  - {name: eSakal, domain: esakal.com, rss_url: "https://www.esakal.com/feed", language: mr, tier: 2, kind: outlet}
+  - {name: TV9 Marathi, domain: tv9marathi.com, rss_url: "https://tv9marathi.com/feed", language: mr, tier: 2, kind: outlet}

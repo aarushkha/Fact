@@ -37,6 +37,7 @@ def passage_state(p: Passage, stance: PassageJudgment | None = None) -> dict:
         "source_tier": p.tier,
         "source_kind": p.kind,
         "published_at": p.published_at.isoformat() if p.published_at else None,
+        "article_title": p.title,
         "text": p.text,
     }
     if stance is not None:
@@ -114,12 +115,16 @@ class JevClassifier:
             {"claim": claim.text_en, "claim_original_language": claim.text_original, "passage": passage_state(passage)},
             {"stance": {"type": "choice",
                         "instructions": "Judge only from the passage text. What does the passage say about the claim?",
-                        "criteria": prompts.STANCE_CRITERIA}},
+                        "criteria": prompts.STANCE_CRITERIA},
+             "same_event": {"type": "noul", "instructions": prompts.SAME_EVENT_QUESTION,
+                            "criteria": prompts.SAME_EVENT_CRITERIA}},
         )
         a = ans["stance"]
         probs = normalize_probs(a.get("probabilities") or {a["choice"]: 1.0}, list(prompts.STANCE_CRITERIA))
         choice = max(probs, key=probs.get)
-        return PassageJudgment(passage_id=passage.id, stance=Stance(choice), probability=probs[choice])
+        same = float(ans["same_event"].get("noul", 0.0))
+        return PassageJudgment(passage_id=passage.id, stance=Stance(choice), probability=probs[choice],
+                               same_event=min(1.0, max(0.0, same)))
 
     async def expected_evidence(
         self, claim: Claim, passages: list[Passage], judgments: list[PassageJudgment]

@@ -163,9 +163,9 @@ CLAIM_TYPE_CRITERIA = {
 }
 
 STANCE_CRITERIA = {
-    "supports": "The passage reports that the claim, as stated, is true.",
-    "contradicts": "The passage reports that the claim is false, or that it misrepresents time, place, people or context (e.g. old media shared as new).",
-    "irrelevant": "The passage does not address this claim, or only mentions related topics.",
+    "supports": "The passage reports that this same event or fact, as stated in the claim, is true.",
+    "contradicts": "The passage is about this same event, place, media or quote and reports that the claim is false or misrepresents its time, place, people or context.",
+    "irrelevant": "The passage is about a different event, place or subject (even a similar one, such as another incident elsewhere), or does not address the claim.",
 }
 
 VERDICT_CRITERIA = {
@@ -193,16 +193,26 @@ CLAIM_TYPE_SCHEMA = {
     "required": ["probabilities"],
 }
 
+SAME_EVENT_QUESTION = (
+    "Is the passage (read together with its article title) about the same specific incident, image, video or "
+    "quote as the claim (same people, place and event), not just a similar topic or another viral video?"
+)
+SAME_EVENT_CRITERIA = {
+    "true": "Yes, the passage is about this exact incident/media/quote.",
+    "false": "No, it is about a different incident, media item or quote, even if similar.",
+}
+
 STANCE_SCHEMA = {
     "type": "object",
     "properties": {
+        "same_event": {"type": "number", "minimum": 0, "maximum": 1, "description": SAME_EVENT_QUESTION},
         "probabilities": {
             "type": "object",
             "properties": {k: {"type": "number", "minimum": 0, "maximum": 1} for k in STANCE_CRITERIA},
             "required": list(STANCE_CRITERIA),
         }
     },
-    "required": ["probabilities"],
+    "required": ["same_event", "probabilities"],
 }
 
 EXPECTED_SCHEMA = {

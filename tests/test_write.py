@@ -65,3 +65,43 @@ async def test_sentence_entailed_by_one_window_of_a_long_passage_survives():
     r = await verify_sentences([d], [long_p], SentenceLevelNLI(), 0.5)
     assert [s.sentence for s in r.kept] == [d.sentence] and r.kept[0].sources == ["src_lp"]
     assert premise_windows("A. B. C.") == ["A. B. C.", "A.", "B.", "C.", "A. B.", "B. C."]
+
+
+def test_best_windows_bounded_and_relevant():
+    from app.pipeline.write import best_windows
+
+    text = " ".join(f"Sentence {i} about topic {i}." for i in range(12)) + " The bridge collapsed in Nashik."
+    w = best_windows(text, "A bridge collapsed in Nashik.")
+    assert len(w) == 4 and w[0] == text and w[1] == "The bridge collapsed in Nashik."
+
+
+async def test_restated_claim_dropped_under_contradicted():
+    debunk = passage("p9", text="Mumbai airport is closed for a week. This claim is false: the airport is not closed.")
+    drafts = [DraftSentence(sentence="Mumbai airport is closed for a week.", passage_ids=["p9"]),
+              DraftSentence(sentence="This claim is false: the airport is not closed.", passage_ids=["p9"])]
+    claim_text = "Mumbai airport is closed for a week."
+    r = await verify_sentences(drafts, [debunk], MockNLIVerifier(), 0.5, claim_text=claim_text, status="CONTRADICTED")
+    assert [s.sentence for s in r.kept] == ["This claim is false: the airport is not closed."]
+    assert r.dropped == [{"sentence": "Mumbai airport is closed for a week.", "reason": "restates the claim under CONTRADICTED"}]
+    # Under CONFIRMED a sentence that matches the claim is exactly what the summary should say.
+    r = await verify_sentences(drafts[:1], [debunk], MockNLIVerifier(), 0.5, claim_text=claim_text, status="CONFIRMED")
+    assert [s.sentence for s in r.kept] == ["Mumbai airport is closed for a week."]
+
+
+async def test_correction_phrased_as_is_false_is_kept_under_contradicted():
+    p = passage("p8", text="The claim that Mumbai airport is closed for a week is false.")
+    d = DraftSentence(sentence="The claim that Mumbai airport is closed for a week is false.", passage_ids=["p8"])
+    r = await verify_sentences([d], [p], MockNLIVerifier(), 0.5, claim_text="Mumbai airport is closed for a week.",
+                               status="CONTRADICTED")
+    assert [s.sentence for s in r.kept] == [d.sentence]
+
+
+async def test_labelled_claim_quote_dropped_under_fails_status_only():
+    # Real debunks quote the claim under a label; NLI often scored these below the restatement threshold.
+    p = passage("p7", text="Claim: The video shows a flood in Pune last week. Fact: the video is from 2019 in Kerala.")
+    d = DraftSentence(sentence="Claim: The video shows a flood in Pune last week.", passage_ids=["p7"])
+    other = "Something unrelated entirely."
+    r = await verify_sentences([d], [p], MockNLIVerifier(), 0.5, claim_text=other, status="MISLEADING_CONTEXT")
+    assert r.kept == [] and r.dropped[0]["reason"] == "quotes the claim under MISLEADING_CONTEXT"
+    r = await verify_sentences([d], [p], MockNLIVerifier(), 0.5, claim_text=other, status="CONFIRMED")
+    assert len(r.kept) == 1

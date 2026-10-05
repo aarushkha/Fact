@@ -6,6 +6,7 @@ import asyncio
 
 from app.adapters.base import LLM, Classifier
 from app.models.schemas import Claim, ClaimType, Normalized, RawClaim
+from app.text import guess_entities
 
 
 def resolve_type(predicted: ClaimType, probability: float, threshold: float) -> tuple[ClaimType, float]:
@@ -20,9 +21,12 @@ def resolve_type(predicted: ClaimType, probability: float, threshold: float) -> 
 
 
 async def extract_claims(
-    norm: Normalized, llm: LLM, classifier: Classifier, type_threshold: float
+    norm: Normalized, llm: LLM, classifier: Classifier, type_threshold: float, single: bool = False
 ) -> list[Claim]:
-    raw: list[RawClaim] = await llm.extract_claims(norm.text_original, norm.text_en, norm.languages)
+    if single:  # the input is already one atomic claim (e.g. an eval row): no extraction call
+        raw = [RawClaim(text_original=norm.text_original, text_en=norm.text_en, entities=guess_entities(norm.text_en))]
+    else:
+        raw = await llm.extract_claims(norm.text_original, norm.text_en, norm.languages)
     raw = [r for r in raw if r.text_en.strip()]
     typed = await asyncio.gather(*(classifier.claim_type(r) for r in raw))
     claims = []

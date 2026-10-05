@@ -29,6 +29,7 @@ from app.models.schemas import (
     Status,
 )
 from app.jsonable import to_jsonable
+from app.pipeline.cascade import cascade_signals
 from app.pipeline.context import StageContext
 from app.pipeline.extract import extract_claims
 from app.pipeline.ingest import ingest
@@ -38,6 +39,7 @@ from app.pipeline.normalize import normalize
 from app.pipeline.retrieve import rank_passages, retrieve
 from app.pipeline.write import verify_sentences
 from app.sources import Whitelist
+from app.text import document_key
 
 log = logging.getLogger("fact.pipeline")
 PIPELINE_VERSION = "pipeline-0.1"
@@ -88,6 +90,7 @@ class Pipeline:
             confidence=settings.confidence_threshold,
             passage_relevance=settings.passage_relevance_threshold,
             too_early_window_hours=settings.too_early_window_hours,
+            same_event=settings.same_event_threshold,
         )
 
     # ------------------------------------------------------------------ public
@@ -161,7 +164,7 @@ class Pipeline:
             model_versions["translator"] = f"llm-fallback:{a.llm.model_version}"
         claims = await ctx.run(
             "extract",
-            lambda: extract_claims(norm, a.llm, a.classifier, s.claim_type_threshold),
+            lambda: extract_claims(norm, a.llm, a.classifier, s.claim_type_threshold, single=inp.single_claim),
             inputs=norm,
             model_version=lambda: f"llm={a.llm.model_version};classifier={a.classifier.model_version}",
         )
@@ -186,8 +189,10 @@ class Pipeline:
         )
 
         age = claim_age_hours(ingested.post_date, now)
+        excluded = {document_key(u) for u in inp.exclude_urls}
         outcomes = await asyncio.gather(
-            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit) for c in claims)
+            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded, ingested.post_date)
+              for c in claims)
         )
 
         # Record the models that actually answered (fallback models can differ from the configured ones).
@@ -216,6 +221,16 @@ class Pipeline:
         await ctx.run("store", lambda: self.store.finish_check(response), inputs={"claims": len(results)})
         await emit("done", response.model_dump(mode="json"))
 
+    async def _signals(self, ctx, cid, embedding, now, passages=None, judgments=None) -> dict:
+        return await ctx.run(
+            "cascade",
+            lambda: cascade_signals(
+                self.store, embedding, self.a.embedder.model_version, now, self.settings.cascade_similarity_threshold,
+                passages, judgments, self.settings.passage_relevance_threshold,
+            ),
+            claim_id=cid,
+        )
+
     async def _claim(
         self,
         ctx: StageContext,
@@ -225,9 +240,11 @@ class Pipeline:
         now: datetime,
         model_versions: dict[str, str],
         emit: Emit,
+        excluded: set[str] = frozenset(),
+        post_date: datetime | None = None,
     ) -> tuple[ClaimResult, list[SourceOut]]:
         try:
-            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit)
+            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit, excluded, post_date)
         except Exception as exc:
             # Abstain on failure; never guess.
             log.exception("claim %s failed", claim.id)
@@ -252,6 +269,8 @@ class Pipeline:
         now: datetime,
         model_versions: dict[str, str],
         emit: Emit,
+        excluded: set[str] = frozenset(),
+        post_date: datetime | None = None,
     ) -> tuple[ClaimResult, list[SourceOut]]:
         a, s = self.a, self.settings
         cid = claim.id
@@ -292,7 +311,7 @@ class Pipeline:
                 model_version=lambda: a.factcheck.model_version, claim_id=cid,
             ),
         )
-        if cached is not None:
+        if cached is not None and not excluded:  # a cached verdict may rest on the excluded evidence
             res = cached.claim.model_copy(
                 update={"text_original": claim.text_original, "text_en": claim.text_en, "type": claim.type}
             )
@@ -300,9 +319,21 @@ class Pipeline:
                 "claim_id": cid, "kind": "cache", "similarity": round(cached.similarity, 4),
                 "from_check_id": cached.check_id,
             })
-            await emit("verdict", {"claim_id": cid, "claim": res, "sources": cached.sources})
+            signals = await self._signals(ctx, cid, embedding, now)
+            # Every submission is stored, so repeat submissions of a rumour can be counted.
+            await ctx.run(
+                "store",
+                lambda: self.store.save_claim(
+                    ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, cached.sources,
+                    model_versions, None, post_date=post_date, signals=signals, created_at=now,
+                ),
+                inputs={"status": res.status, "from_cache": True}, claim_id=cid,
+            )
+            await emit("verdict", {"claim_id": cid, "claim": res, "sources": cached.sources, "signals": signals})
             return res, cached.sources
 
+        if excluded:  # evaluation leakage guard: drop the evidence that labels this example
+            fc_matches = [m for m in fc_matches if document_key(m.hit.review_url) not in excluded]
         decisive = decisive_factcheck(fc_matches)
         if decisive is not None and decisive.status is not None and s.factcheck_hit_confidence >= s.confidence_threshold:
             await emit("cache_hit", {
@@ -312,17 +343,20 @@ class Pipeline:
             })
             status, confidence = decisive.status, s.factcheck_hit_confidence
             passages = [decisive.passage]
+            judged_passages = judged_judgments = None
             expected = [ExpectedEvidence(item="Published fact-check by a whitelisted fact-checker", found=True)]
         else:
             # Stage 5: retrieve.
             passages = await ctx.run(
                 "retrieve",
-                lambda: retrieve(claim, languages, embedding, a.search, self.whitelist, s.retrieval_top_k, a.web_search),
+                lambda: retrieve(claim, languages, embedding, a.search, self.whitelist, s.retrieval_top_k, a.web_search,
+                                 exclude=excluded),
                 inputs={"text_en": claim.text_en, "text_original": claim.text_original},
                 model_version=lambda: a.search.model_version, claim_id=cid,
             )
             # Whitelisted fact-checks that did not short-circuit still count as evidence.
             passages = rank_passages(passages + [m.passage for m in fc_matches])
+            passages = [p for p in passages if document_key(p.url) not in excluded]
             await emit("evidence", {"claim_id": cid, "passages": [passage_brief(p) for p in passages]})
 
             # Stage 6: judge.
@@ -338,6 +372,7 @@ class Pipeline:
                 },
             )
             status, confidence, expected = judged.status, judged.confidence, judged.expected
+            judged_passages, judged_judgments = passages, judged.judgments
             passages = [p for _, p in judged.effective]
 
         # Stage 7: write + verify. Only best-tier relevant passages are offered to the writer.
@@ -349,7 +384,9 @@ class Pipeline:
         )
         report = await ctx.run(
             "verify",
-            lambda: verify_sentences(drafts, passages, a.nli, s.nli_entailment_threshold),
+            lambda: verify_sentences(drafts, passages, a.nli, s.nli_entailment_threshold,
+                                     claim_text=claim.text_en, status=status,
+                                     restatement_threshold=s.nli_restatement_threshold),
             inputs={"drafts": drafts}, model_version=lambda: a.nli.model_version, claim_id=cid,
         )
 
@@ -364,16 +401,17 @@ class Pipeline:
         sources = list({src.id: src for src in sources}.values())
 
         # Stage 8: store.
+        signals = await self._signals(ctx, cid, embedding, now, judged_passages, judged_judgments)
         claim_recheck = recheck_at([status], now, s.recheck_too_early_hours, s.recheck_evidence_missing_days)
         await ctx.run(
             "store",
             lambda: self.store.save_claim(
                 ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, sources,
-                model_versions, claim_recheck,
+                model_versions, claim_recheck, post_date=post_date, signals=signals, created_at=now,
             ),
             inputs={"status": status}, claim_id=cid,
         )
-        await emit("verdict", {"claim_id": cid, "claim": res, "sources": sources})
+        await emit("verdict", {"claim_id": cid, "claim": res, "sources": sources, "signals": signals})
         return res, sources
 
 

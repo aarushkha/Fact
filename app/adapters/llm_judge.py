@@ -49,12 +49,16 @@ class LLMClassifier:
         return ClaimType(choice), probs[choice]
 
     async def judge_passage(self, claim: Claim, passage: Passage) -> PassageJudgment:
-        probs = await self._probs(
-            "Judge only from the passage text. What does the passage say about the claim?", prompts.STANCE_CRITERIA,
-            {"claim": claim.text_en, "passage": passage_state(passage)}, prompts.STANCE_SCHEMA,
+        user = (
+            "Judge only from the passage text. What does the passage say about the claim?\n\nOPTIONS:\n"
+            f"{prompts.criteria_text(prompts.STANCE_CRITERIA)}\n\nAlso give same_event: {prompts.SAME_EVENT_QUESTION}\n\n"
+            f"INPUT (JSON):\n{json.dumps({'claim': claim.text_en, 'passage': passage_state(passage)}, ensure_ascii=False, default=str)}"
         )
+        data = await self.client.generate_json(prompts.JUDGE_SYSTEM, user, prompts.STANCE_SCHEMA)
+        probs = normalize_probs(data.get("probabilities") or {}, list(prompts.STANCE_CRITERIA))
         choice = max(probs, key=probs.get)
-        return PassageJudgment(passage_id=passage.id, stance=Stance(choice), probability=probs[choice])
+        same = min(1.0, max(0.0, float(data.get("same_event", 0.0))))
+        return PassageJudgment(passage_id=passage.id, stance=Stance(choice), probability=probs[choice], same_event=same)
 
     async def expected_evidence(
         self, claim: Claim, passages: list[Passage], judgments: list[PassageJudgment]

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.db.tables import Tables
 from app.sources import SourceEntry, Whitelist, host_of
+from app.text import document_key
 
 
 @dataclass
@@ -35,7 +36,7 @@ async def sync_sources(engine: AsyncEngine, t: Tables, whitelist: Whitelist) -> 
         for e in whitelist.entries:
             values = {
                 "domain": host_of(e.domain), "name": e.name, "tier": e.tier, "kind": e.kind,
-                "language": e.language, "rss_url": e.rss_url, "sitemap_url": e.sitemap_url,
+                "language": e.language, "rss_url": " ".join(e.feeds) or None, "sitemap_url": e.sitemap_url,
             }
             stmt = insert(t.sources).values(**values)
             await conn.execute(stmt.on_conflict_do_update(index_elements=["domain"], set_=values))
@@ -43,12 +44,16 @@ async def sync_sources(engine: AsyncEngine, t: Tables, whitelist: Whitelist) -> 
     return {r.domain: r.id for r in rows}
 
 
-async def known_urls(engine: AsyncEngine, t: Tables, urls: list[str]) -> set[str]:
+async def known_urls(engine: AsyncEngine, t: Tables, urls: list[str], source_id: int | None = None) -> set[str]:
+    """The given URLs that are already stored. Compared by document_key: documents are stored under the URL
+    after redirects, which can differ from the feed's link (e.g. Newschecker's trailing slash)."""
     if not urls:
         return set()
+    stmt = select(t.documents.c.url)
+    stmt = stmt.where(t.documents.c.source_id == source_id) if source_id is not None else stmt.where(t.documents.c.url.in_(urls))
     async with engine.connect() as conn:
-        rows = await conn.execute(select(t.documents.c.url).where(t.documents.c.url.in_(urls)))
-        return {r.url for r in rows}
+        stored = {document_key(r.url) for r in await conn.execute(stmt)}
+    return {u for u in urls if document_key(u) in stored}
 
 
 async def upsert_document(
@@ -64,12 +69,13 @@ async def upsert_document(
     full_text: str,
     chunks: list[ChunkIn],
     embedding_model: str,
+    claim_review: dict | None = None,
 ) -> int:
     """Insert or replace a document and all of its passages in one transaction."""
     async with engine.begin() as conn:
         values = {
             "source_id": source_id, "url": url, "title": title, "language": language or entry.language,
-            "published_at": published_at, "content_hash": content_hash(full_text),
+            "published_at": published_at, "content_hash": content_hash(full_text), "claim_review": claim_review,
         }
         stmt = insert(t.documents).values(**values)
         doc_id = (

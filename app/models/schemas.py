@@ -102,6 +102,9 @@ class CheckInput(BaseModel):
     image: bytes | None = None
     image_mime: str | None = None
     post_date: datetime | None = None  # user-supplied; overrides anything read from the image
+    # Evaluation only (not exposed by the API):
+    exclude_urls: list[str] = []  # evidence URLs to ignore, e.g. the fact-check that labels an eval row
+    single_claim: bool = False  # treat the whole text as one claim (skips claim extraction)
 
     @property
     def input_type(self) -> InputType:
@@ -158,6 +161,7 @@ class Passage(BaseModel):
     language: str | None = None
     published_at: datetime | None = None
     text: str
+    title: str | None = None  # article title: context for chunks cut from the middle of an article
     relevance: float = 0.0
 
 
@@ -165,6 +169,8 @@ class PassageJudgment(BaseModel):
     passage_id: str
     stance: Stance
     probability: float = Field(ge=0, le=1)
+    # P(passage is about the same specific incident/media/quote as the claim). None = not assessed.
+    same_event: float | None = Field(default=None, ge=0, le=1)
 
 
 class ClaimJudgment(BaseModel):

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Tried in order when the primary model is overloaded (HTTP 429/503) or unavailable.
     llm_fallback_models: str = "gemini-3.5-flash,gemini-3.5-flash-lite"
     llm_thinking_level: str = "low"  # minimal | low | medium | high
+    # Gemini-free options (real mode): sentences | llm  and  extractive | llm
+    claim_extractor: str = "sentences"
+    summary_writer: str = "extractive"
     vision_provider: str = "gemini"
     vision_model: str = "gemini-3.8-flash"
     gemini_api_key: str = ""
@@ -57,6 +60,9 @@ class Settings(BaseSettings):
     embedder_max_seq_length: int = 1024
     nli_model: str = "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
     nli_revision: str = "b5113eb38ab63efdd7f280f8c144ea8b13f978ce"  # pinned HF commit
+    # Run embedder + NLI in a separate process (app/model_server.py). Empty = load them in-process.
+    model_server_url: str = ""
+    model_server_token: str = ""
 
     google_factcheck_api_key: str = ""
     web_search_enabled: bool = False  # TODO: no paid web-search provider chosen yet
@@ -66,17 +72,30 @@ class Settings(BaseSettings):
     confidence_threshold: float = 0.6  # below this, abstain (UNVERIFIED_*)
     claim_type_threshold: float = 0.6  # min prob to mark a claim not-checkable
     passage_relevance_threshold: float = 0.5  # min prob for supports/contradicts to count
+    same_event_threshold: float = 0.6  # min P(passage is about the same incident) for it to count at all
     cache_similarity_threshold: float = 0.92
+    cascade_similarity_threshold: float = 0.85  # "same rumour" for counting repeat submissions
     factcheck_similarity_threshold: float = 0.85
     factcheck_hit_confidence: float = 0.9
     nli_entailment_threshold: float = 0.5
+    # Under CONTRADICTED / MISLEADING_CONTEXT, drop a summary sentence that entails the claim this strongly
+    # (it restates the claim, e.g. a debunk's opening quote). Stricter than the citation check on purpose.
+    nli_restatement_threshold: float = 0.8
     too_early_window_hours: float = 72
     recheck_too_early_hours: float = 6
     recheck_evidence_missing_days: float = 7
+    recheck_max_age_days: float = 30  # stop rechecking claims older than this
+    recheck_interval_minutes: float = 15  # worker: how often to look for due rechecks
+    recheck_batch_size: int = 20
+    crawl_interval_minutes: float = 60  # worker: how often to crawl all sources
     retrieval_top_k: int = 8
     search_min_vector_similarity: float = 0.5  # BGE-M3: unrelated short texts score ~0.4
     search_rrf_k: int = 60
     max_upload_mb: int = 10
+
+    # --- API protection ---
+    api_keys: str = ""  # comma-separated; empty = auth disabled (local development only)
+    rate_limit_per_minute: int = 10  # checks per client (API key, or IP when auth is off); 0 = off
 
     @property
     def effective_search_backend(self) -> str:

@@ -1,7 +1,7 @@
 """Postgres schema (SQLAlchemy Core). Everything lives in Postgres + pgvector.
 
-Created idempotently by `init_db` (called at app startup and by the crawler).
-TODO: switch to Alembic migrations once the schema settles.
+Schema changes go through Alembic (app/db/migrations); `init_db` upgrades to head at app startup and
+in the crawler. After editing these tables: alembic revision --autogenerate -m "..."
 """
 
 from __future__ import annotations
@@ -74,6 +74,7 @@ def build_tables(dim: int) -> Tables:
         Column("published_at", tz),
         Column("fetched_at", tz, server_default=func.now(), nullable=False),
         Column("content_hash", Text),
+        Column("claim_review", JSONB(none_as_null=True)),  # schema.org ClaimReview found on the page (fact-check articles)
     )
     passages = Table(
         "passages", md,
@@ -127,6 +128,8 @@ def build_tables(dim: int) -> Tables:
         Column("entity_keys", ARRAY(Text), nullable=False),
         Column("embedding", Vector(dim)),
         Column("embedding_model", Text, nullable=False),
+        Column("signals", JSONB(none_as_null=True)),  # rumour-cascade signals at check time
+        Column("post_date", tz),  # resolved post date; rechecks reuse it
         Column("created_at", tz, server_default=func.now(), nullable=False),
         Index("ix_claims_entity_keys", "entity_keys", postgresql_using="gin"),
         Index(
@@ -144,7 +147,10 @@ def build_tables(dim: int) -> Tables:
         Column("sources", JSONB, nullable=False),
         Column("model_versions", JSONB, nullable=False),
         Column("recheck_at", tz),
+        Column("rechecked_from", BigInteger, ForeignKey("verdicts.id", ondelete="SET NULL")),
+        Column("superseded_at", tz),  # set when a recheck produced a newer verdict
         Column("created_at", tz, server_default=func.now(), nullable=False),
+        Index("ix_verdicts_due", "recheck_at", postgresql_where=text("superseded_at IS NULL")),
     )
     return Tables(md, sources, documents, passages, checks, stage_runs, claims, verdicts, dim)
 
@@ -154,6 +160,7 @@ def make_engine(database_url: str) -> AsyncEngine:
 
 
 async def init_db(engine: AsyncEngine, t: Tables) -> None:
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(t.metadata.create_all)
+    """Bring the database to the latest Alembic revision (creates everything on a fresh database)."""
+    from app.db.migrate import run_migrations
+
+    await run_migrations(engine, t.dim)

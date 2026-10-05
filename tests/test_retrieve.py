@@ -37,3 +37,14 @@ async def test_retrieve_queries_both_languages_and_filters(whitelist):
     out = await retrieve(c, ["mr"], None, Spy(whitelist), whitelist, k=8)
     assert seen[0] == (c.text_original, "mr") and seen[1] == (c.text_en, "en")
     assert all("random-blog" not in p.url for p in out)  # not whitelisted
+
+
+async def test_excluded_urls_do_not_take_top_k_slots(whitelist):
+    from app.text import document_key
+
+    c = claim("A footbridge over the Godavari river in Nashik collapsed on Sunday.", entities=("Nashik",))
+    full = await retrieve(c, ["en"], None, MockSearch(whitelist), whitelist, k=8)
+    assert len(full) >= 2
+    top = full[0]
+    out = await retrieve(c, ["en"], None, MockSearch(whitelist), whitelist, k=1, exclude={document_key(top.url)})
+    assert len(out) == 1 and out[0].url != top.url  # the next eligible passage fills the slot

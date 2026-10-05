@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from app.models.schemas import DEFINITIVE_STATUSES, CheckResponse, ClaimResult, Entity, SourceOut
@@ -16,6 +16,18 @@ class CachedVerdict:
     sources: list[SourceOut]
     similarity: float
     check_id: str
+
+
+@dataclass
+class DueRecheck:
+    verdict_id: int
+    check_id: str
+    claim_key: str
+    text_original: str
+    text_en: str
+    status: str
+    post_date: datetime | None
+    recheck_at: datetime
 
 
 @dataclass
@@ -56,7 +68,31 @@ class Store(Protocol):
         sources: list[SourceOut],
         model_versions: dict[str, str],
         recheck_at: datetime | None,
+        post_date: datetime | None = None,
+        signals: dict | None = None,
+        created_at: datetime | None = None,
     ) -> None: ...
+
+    async def similar_claim_stats(
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+    ) -> dict:
+        """{count_24h, count_7d, first_seen} over earlier claims with cosine >= threshold, since `since`."""
+        ...
+
+    async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:
+        """Raw rows for monitoring: {"stage_runs": [...], "checks": [...], "claims": [...]} since `since`."""
+        ...
+
+    async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
+        """UNVERIFIED verdicts whose recheck_at has passed, not yet superseded, claim newer than `oldest`."""
+        ...
+
+    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> bool:
+        """Point the new check's verdict at the old one and mark the old one superseded.
+        Returns False (and supersedes nothing) when the new check stored no verdict for claim_key."""
+        ...
+
+    async def postpone_recheck(self, verdict_id: int, until: datetime) -> None: ...
 
     async def finish_check(self, response: CheckResponse) -> None: ...
 
@@ -85,6 +121,13 @@ class _StoredClaim:
     entities: set[str]
     sources: list[SourceOut]
     recheck_at: datetime | None
+    id: int = 0
+    claim_key: str = ""
+    post_date: datetime | None = None
+    created_at: datetime | None = None
+    signals: dict | None = None
+    rechecked_from: int | None = None
+    superseded: bool = False
 
 
 @dataclass
@@ -110,8 +153,8 @@ class InMemoryStore:
                 continue  # unverified results depend on claim age and on evidence that may appear later
             if row.embedding_model != embedding_model:
                 continue
-            if row.recheck_at is not None and row.recheck_at <= now:
-                continue  # stale: due for a recheck, do not serve
+            if row.superseded or (row.recheck_at is not None and row.recheck_at <= now):
+                continue  # stale: superseded or due for a recheck, do not serve
             if not keys & row.entities:
                 continue
             sim = cosine(embedding, row.embedding)
@@ -130,10 +173,80 @@ class InMemoryStore:
         sources: list[SourceOut],
         model_versions: dict[str, str],
         recheck_at: datetime | None,
+        post_date: datetime | None = None,
+        signals: dict | None = None,
+        created_at: datetime | None = None,
     ) -> None:
         self.claims.append(
-            _StoredClaim(check_id, claim, embedding, embedding_model, entity_keys(entities), sources, recheck_at)
+            _StoredClaim(
+                check_id, claim, embedding, embedding_model, entity_keys(entities), sources, recheck_at,
+                id=len(self.claims) + 1, claim_key=claim_key, post_date=post_date,
+                created_at=created_at or datetime.now(timezone.utc), signals=signals,
+            )
         )
+
+    async def similar_claim_stats(
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+    ) -> dict:
+        from datetime import timedelta
+
+        hits = [
+            r.created_at for r in self.claims
+            if r.embedding_model == embedding_model and r.created_at and since <= r.created_at <= now
+            and cosine(embedding, r.embedding) >= threshold
+        ]
+        return {
+            "count_24h": sum(1 for t in hits if t >= now - timedelta(hours=24)),
+            "count_7d": len(hits),
+            "first_seen": min(hits) if hits else None,
+        }
+
+    async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:
+        runs = [r for r in self.stage_runs if r.started_at >= since][-limit:]
+        check_ids = {r.check_id for r in runs}
+        return {
+            "stage_runs": [
+                {"stage": r.stage, "latency_ms": r.latency_ms, "model_version": r.model_version, "error": r.error,
+                 "outputs": r.outputs if r.stage == "verify" else None}
+                for r in runs
+            ],
+            "checks": [
+                {"id": cid, "status": "error" if self.checks.get(cid, {}).get("error") else
+                 ("done" if cid in self.responses else "running")}
+                for cid in check_ids
+            ],
+            "claims": [
+                {"status": c.claim.status.value, "text_en": c.claim.text_en, "signals": c.signals,
+                 "rechecked_from": c.rechecked_from, "superseded": c.superseded}
+                for c in self.claims if c.created_at and c.created_at >= since
+            ],
+        }
+
+    async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
+        out = []
+        for r in self.claims:
+            if r.superseded or r.recheck_at is None or r.recheck_at > now or r.claim.status in DEFINITIVE_STATUSES:
+                continue
+            if (r.post_date or r.created_at or now) < oldest:
+                continue
+            out.append(DueRecheck(r.id, r.check_id, r.claim_key, r.claim.text_original, r.claim.text_en,
+                                  r.claim.status.value, r.post_date, r.recheck_at))
+        return sorted(out, key=lambda d: d.recheck_at)[:limit]
+
+    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> bool:
+        new = [r for r in self.claims if r.check_id == new_check_id and r.claim_key == claim_key]
+        for r in new:
+            r.rechecked_from = old_verdict_id
+        if new:
+            for r in self.claims:
+                if r.id == old_verdict_id:
+                    r.superseded = True
+        return bool(new)
+
+    async def postpone_recheck(self, verdict_id: int, until: datetime) -> None:
+        for r in self.claims:
+            if r.id == verdict_id:
+                r.recheck_at = until
 
     async def finish_check(self, response: CheckResponse) -> None:
         self.responses[response.check_id] = response

@@ -1,3 +1,4 @@
+import pytest
 from datetime import datetime, timezone
 
 from crawler.chunk import chunk_text
@@ -69,3 +70,141 @@ def test_extract_article():
     a = extract_article(article_html(body), "https://police-nashik.mock.example/a")
     assert a and "footbridge collapsed" in a.text and "Copyright" not in a.text
     assert extract_article(article_html("Too short."), "https://x.example/") is None
+
+
+def test_feed_urls_lose_fragments():
+    rss = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>
+    <item><title>A</title><link>https://x.example/a#publisher=newsstand</link></item></channel></rss>"""
+    assert parse_feed(rss)[0].url == "https://x.example/a"
+
+
+def test_extract_claim_review_from_json_ld():
+    from crawler.extract import claim_review_text, extract_claim_review
+
+    html = """<html><head><script type="application/ld+json">{"@context":"https://schema.org","@graph":[
+      {"@type":"WebPage"},
+      {"@type":"ClaimReview","claimReviewed":"Video shows floods in Kolhapur this week","datePublished":"2026-10-01",
+       "reviewRating":{"@type":"Rating","alternateName":"Misleading"},
+       "itemReviewed":{"@type":"Claim","author":{"@type":"Organization","name":"Social media users"}}}]}
+    </script></head><body></body></html>"""
+    r = extract_claim_review(html)
+    assert r == {"claim_reviewed": "Video shows floods in Kolhapur this week", "rating": "Misleading",
+                 "date_published": "2026-10-01", "claimant": "Social media users"}
+    assert claim_review_text(r) == 'Fact-check verdict Misleading on the claim "Video shows floods in Kolhapur this week"'
+    assert extract_claim_review("<script type='application/ld+json'>not json</script>") is None
+
+
+def test_source_entry_accepts_several_feeds():
+    from app.sources import SourceEntry
+
+    assert SourceEntry(name="x", domain="x.in", tier=2, rss_url=["a", "b"]).feeds == ["a", "b"]
+    assert SourceEntry(name="x", domain="x.in", tier=2, rss_url="a").feeds == ["a"]
+    assert SourceEntry(name="x", domain="x.in", tier=2).feeds == []
+
+
+def test_extract_claim_review_skips_malformed_nodes():
+    from crawler.extract import extract_claim_review
+
+    bad = '{"@type": "ClaimReview", "claimReviewed": "x", "reviewRating": "False", "itemReviewed": "y"}'
+    good = '{"@type": "ClaimReview", "claimReviewed": "Video shows floods", "reviewRating": {"alternateName": "False"}}'
+    html = f'<script type="application/ld+json">[{bad}, {good}]</script>'
+    assert extract_claim_review(html)["claim_reviewed"] == "Video shows floods"
+
+
+def test_feed_language_overrides_entry_language():
+    from app.sources import SourceEntry
+
+    e = SourceEntry(name="x", domain="x.in", tier=2, language="hi",
+                    rss_url=["https://x.in/feed", {"url": "https://x.in/mr/feed", "language": "mr"}])
+    assert [(f.url, f.language) for f in e.feed_specs] == [("https://x.in/feed", "hi"), ("https://x.in/mr/feed", "mr")]
+    assert e.feeds == ["https://x.in/feed", "https://x.in/mr/feed"]
+
+
+async def test_discover_survives_one_failing_feed_and_tags_languages():
+    import httpx
+    import pytest
+
+    from app.sources import SourceEntry
+    from crawler.run import discover
+
+    mr_rss = RSS.replace(b"wire.mock.example/one", b"wire.mock.example/mr-one")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return {"/down": httpx.Response(503), "/mr": httpx.Response(200, content=mr_rss)}.get(
+            request.url.path, httpx.Response(200, content=RSS))
+
+    entry = SourceEntry(name="w", domain="wire.mock.example", tier=1, language="en",
+                        rss_url=["https://wire.mock.example/down", "https://wire.mock.example/feed",
+                                 {"url": "https://wire.mock.example/mr", "language": "mr"}])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        found = {c.url: c.language for c in await discover(client, entry)}
+        assert found["https://wire.mock.example/one"] == "en"
+        assert found["https://wire.mock.example/mr-one"] == "mr"
+        dead = SourceEntry(name="d", domain="wire.mock.example", tier=1, rss_url="https://wire.mock.example/down")
+        with pytest.raises(RuntimeError, match="all discovery URLs failed"):
+            await discover(client, dead)
+
+
+async def test_crawler_never_follows_redirects_or_child_sitemaps_off_domain():
+    import httpx
+
+    from app.sources import SourceEntry
+    from crawler.run import OffsiteRedirect, discover, safe_get
+
+    index = b"""<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<sitemap><loc>http://169.254.169.254/latest/meta-data/</loc></sitemap>
+<sitemap><loc>https://wire.mock.example/sitemap-1.xml</loc></sitemap></sitemapindex>"""
+    requested = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        if request.url.path == "/sitemap.xml":
+            return httpx.Response(200, content=index)
+        if request.url.path == "/sitemap-1.xml":
+            return httpx.Response(200, content=SITEMAP)
+        if request.url.path == "/moved":
+            return httpx.Response(302, headers={"location": "http://10.0.0.5/admin"})
+        if request.url.path == "/hop":
+            return httpx.Response(301, headers={"location": "/sitemap-1.xml"})
+        return httpx.Response(404)
+
+    entry = SourceEntry(name="w", domain="wire.mock.example", tier=1, sitemap_url="https://wire.mock.example/sitemap.xml")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        found = await discover(client, entry)
+        assert {c.url for c in found} == {"https://wire.mock.example/a", "https://wire.mock.example/b"}
+        assert not any("169.254" in u for u in requested)
+        with pytest.raises(OffsiteRedirect):
+            await safe_get(client, "https://wire.mock.example/moved", {"wire.mock.example"})
+        assert not any("10.0.0.5" in u for u in requested)
+        r = await safe_get(client, "https://wire.mock.example/hop", {"wire.mock.example"})  # on-domain hop is fine
+        assert r.status_code == 200 and str(r.url).endswith("/sitemap-1.xml")
+
+
+async def test_crawler_refuses_hosts_resolving_to_non_public_addresses():
+    import httpx
+
+    from crawler.run import NonPublicAddress, safe_get
+
+    requested = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(200)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        for url, domains in [("http://localhost/x", {"localhost"}), ("http://169.254.169.254/latest/", {"169.254.169.254"}),
+                             ("http://10.0.0.5/admin", {"10.0.0.5"})]:
+            with pytest.raises(NonPublicAddress):
+                await safe_get(client, url, domains)
+    assert requested == []
+
+
+def test_claim_review_list_value_and_verdict_first_text():
+    from crawler.extract import claim_review_text, extract_claim_review
+
+    node = '{"@type": "ClaimReview", "claimReviewed": ["Video shows floods.", ""], "reviewRating": {"alternateName": "False"}}'
+    r = extract_claim_review(f'<script type="application/ld+json">{node}</script>')
+    assert r["claim_reviewed"] == "Video shows floods."  # not "['Video shows floods.', '']"
+    from app.text import sentences
+    text = claim_review_text(r)
+    assert text == 'Fact-check verdict False on the claim "Video shows floods"' and len(sentences(text)) == 1

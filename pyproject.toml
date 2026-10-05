@@ -17,6 +17,7 @@ dependencies = [
     "feedparser>=6.0",
     "trafilatura>=2.0",
     "lxml>=5.0",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]

@@ -13,7 +13,7 @@ from sqlalchemy.pool import NullPool
 
 from app.adapters.factory import build_adapters
 from app.adapters.mock import MockEmbedder
-from app.db.index import ChunkIn, passage_count, sync_sources, upsert_document
+from app.db.index import ChunkIn, known_urls, passage_count, sync_sources, upsert_document
 from app.db.pg_search import PgSearch
 from app.db.pg_store import PgStore
 from app.db.seed import seed_mock_corpus
@@ -36,7 +36,8 @@ async def db():
     t = build_tables(DIM)
     async with engine.begin() as conn:
         await conn.run_sync(t.metadata.drop_all)
-    await init_db(engine, t)
+        await conn.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")
+    await init_db(engine, t)  # runs the Alembic migrations
     yield engine, t
     await engine.dispose()
 
@@ -96,6 +97,20 @@ async def test_upsert_document_replaces_passages(db, whitelist):
     await upsert_document(engine, t, full_text="a b", chunks=[ChunkIn("p1", "a", v), ChunkIn("p2", "b", v)], **kw)
     await upsert_document(engine, t, full_text="c", chunks=[ChunkIn("p3", "c", v)], **kw)
     assert await passage_count(engine, t) == 1
+
+
+async def test_known_urls_matches_feed_links_to_redirected_urls(db, whitelist):
+    # Stored under the URL after redirects; the feed links it with a trailing slash and www.
+    engine, t = db
+    ids = await sync_sources(engine, t, whitelist)
+    entry = whitelist.lookup("https://wire.mock.example/")
+    (v,) = await MockEmbedder(DIM).embed(["x"])
+    await upsert_document(engine, t, source_id=ids["wire.mock.example"], entry=entry, url="https://wire.mock.example/a",
+                          title="A", language="en", published_at=NOW, full_text="a", chunks=[ChunkIn("p1", "a", v)],
+                          embedding_model="mock-1")
+    feed = ["https://www.wire.mock.example/a/", "https://wire.mock.example/b/"]
+    assert await known_urls(engine, t, feed, ids["wire.mock.example"]) == {"https://www.wire.mock.example/a/"}
+    assert await known_urls(engine, t, ["https://wire.mock.example/a"]) == {"https://wire.mock.example/a"}
 
 
 async def test_hybrid_search_both_languages(seeded):
@@ -199,3 +214,36 @@ async def test_crawl_end_to_end(db, settings):
     (vec,) = await emb.embed(["A fire broke out at a chemical factory in Thane."])
     out = await PgSearch(engine, t, emb).search([("A fire broke out at a chemical factory in Thane.", "en")], vec, k=5)
     assert out and out[0].publisher == "Wire (MOCK)" and out[0].tier == 1
+
+
+async def test_recheck_on_postgres(seeded, settings, whitelist):
+    from app.pipeline.recheck import run_rechecks
+
+    engine, t, _ = seeded
+    s = settings.model_copy(update={"database_url": URL})
+    store = PgStore(engine, t)
+    pipeline = Pipeline(s, build_adapters(s, engine, t), store, whitelist, clock=lambda: NOW)
+    await pipeline.run(CheckInput(text="A fire broke out at a chemical factory in Thane.", post_date=NOW - timedelta(hours=2)))
+    pipeline.clock = lambda: NOW + timedelta(days=4)
+    results = await run_rechecks(pipeline)
+    assert [(r["old"], r["new"]) for r in results] == [("UNVERIFIED_TOO_EARLY", "UNVERIFIED_EVIDENCE_MISSING")]
+    async with engine.connect() as conn:
+        rows = (await conn.execute(select(t.verdicts.c.id, t.verdicts.c.superseded_at, t.verdicts.c.rechecked_from)
+                                   .order_by(t.verdicts.c.id))).all()
+        post_dates = (await conn.execute(select(t.claims.c.post_date))).scalars().all()
+    assert rows[0].superseded_at is not None and rows[1].rechecked_from == rows[0].id
+    assert post_dates[0] == post_dates[1] == NOW - timedelta(hours=2)
+    assert await run_rechecks(pipeline) == []
+
+
+async def test_known_urls_keeps_identifying_query_parameters(db, whitelist):
+    # RBI press releases differ only by ?prid=; tracking parameters must not make a stored URL look new.
+    engine, t = db
+    ids = await sync_sources(engine, t, whitelist)
+    entry = whitelist.lookup("https://wire.mock.example/")
+    (v,) = await MockEmbedder(DIM).embed(["x"])
+    await upsert_document(engine, t, source_id=ids["wire.mock.example"], entry=entry,
+                          url="https://wire.mock.example/show.aspx?prid=1", title="A", language="en", published_at=NOW,
+                          full_text="a", chunks=[ChunkIn("p1", "a", v)], embedding_model="mock-1")
+    feed = ["https://wire.mock.example/show.aspx?prid=1&utm_source=rss", "https://wire.mock.example/show.aspx?prid=2"]
+    assert await known_urls(engine, t, feed, ids["wire.mock.example"]) == {feed[0]}

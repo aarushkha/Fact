@@ -3,6 +3,7 @@
     python -m crawler.run                       # every source in sources.yaml with an rss_url/sitemap_url
     python -m crawler.run --source example.org  # one source
     python -m crawler.run --dry-run             # discover only, print candidate URLs
+    python -m crawler.run --reindex             # also re-extract/re-embed articles already indexed
 
 Polls each source's RSS/Atom feed and/or sitemap, keeps only URLs on that source's domain, respects
 robots.txt, extracts article text with trafilatura, chunks it, embeds it and stores it with url,
@@ -13,7 +14,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import logging
+import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
@@ -30,10 +33,62 @@ from app.db.tables import Tables, build_tables, init_db, make_engine
 from app.sources import SourceEntry, Whitelist, host_of, load_whitelist_file
 from crawler.chunk import chunk_text
 from crawler.discover import Candidate, parse_feed, parse_sitemap
-from crawler.extract import extract_article
+from crawler.extract import claim_review_text, extract_article, extract_claim_review
 
 log = logging.getLogger("fact.crawler")
 MAX_CHILD_SITEMAPS = 5
+MAX_REDIRECTS = 5
+
+
+class BlockedURL(httpx.HTTPError):
+    """A URL the crawler refuses to request."""
+
+
+class OffsiteRedirect(BlockedURL):
+    """A redirect (or sitemap child) pointing outside the hosts allowed for that request."""
+
+
+class NonPublicAddress(BlockedURL):
+    """A host that resolves to a private, loopback, link-local or otherwise non-public address."""
+
+
+async def non_public_address(host: str) -> str | None:
+    """A non-public address `host` resolves to, if any. A host that does not resolve returns None: the
+    request then fails on its own. Checked before every request and redirect hop; it does not pin the
+    connection to the checked address, so DNS rebinding needs network egress rules on top."""
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError):
+        return None
+    for *_, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if not ip.is_global:
+            return str(ip)
+    return None
+
+
+def on_domain(url: str, domains: set[str]) -> bool:
+    """http(s) URL whose host is one of `domains` or a subdomain of one."""
+    if urlparse(url).scheme not in ("http", "https"):
+        return False
+    host = host_of(url)
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
+async def safe_get(client: httpx.AsyncClient, url: str, domains: set[str]) -> httpx.Response:
+    """GET that follows redirects itself and only to `domains`, and refuses hosts that resolve to
+    non-public addresses, so a publisher's redirect, sitemap or DNS cannot point the crawler inward."""
+    for _ in range(MAX_REDIRECTS + 1):
+        host = urlparse(url).hostname or ""
+        if addr := await non_public_address(host):
+            raise NonPublicAddress(f"{host} resolves to non-public address {addr}")
+        r = await client.get(url, follow_redirects=False)
+        if not r.is_redirect:
+            return r
+        url = urljoin(str(r.url), r.headers.get("location", ""))
+        if not on_domain(url, domains):
+            raise OffsiteRedirect(f"redirect to {url} leaves {sorted(domains)}")
+    raise httpx.TooManyRedirects(f"more than {MAX_REDIRECTS} redirects", request=r.request)
 
 
 @dataclass
@@ -62,7 +117,7 @@ class Robots:
         if base not in self._cache:
             rp = RobotFileParser()
             try:
-                r = await self.client.get(urljoin(base, "/robots.txt"))
+                r = await safe_get(self.client, urljoin(base, "/robots.txt"), {host_of(base)})
                 rp.parse(r.text.splitlines() if r.status_code == 200 else [])
             except httpx.HTTPError:
                 rp.parse([])
@@ -71,21 +126,47 @@ class Robots:
 
 
 async def discover(client: httpx.AsyncClient, entry: SourceEntry) -> list[Candidate]:
+    """Candidates from every feed and sitemap of a source. One failing URL is logged and skipped;
+    only a source whose discovery URLs all fail raises."""
     found: list[Candidate] = []
-    if entry.rss_url:
-        r = await client.get(entry.rss_url)
-        r.raise_for_status()
-        found += parse_feed(r.content)
+    tried, failures = 0, []
+    domain = host_of(entry.domain)
+
+    async def fetch(url: str, domains: set[str]) -> bytes | None:
+        nonlocal tried
+        tried += 1
+        try:
+            r = await safe_get(client, url, domains)
+            r.raise_for_status()
+            return r.content
+        except httpx.HTTPError as exc:
+            failures.append(f"{url}: {type(exc).__name__}: {exc}")
+            log.warning("discovery failed %s: %s", url, exc)
+            return None
+
+    for feed in entry.feed_specs:  # configured URLs are trusted (e.g. a feedburner host); their redirects are not
+        content = await fetch(feed.url, {domain, host_of(feed.url)})
+        if content is not None:
+            for c in parse_feed(content):
+                c.language = feed.language
+                found.append(c)
     if entry.sitemap_url:
         queue, seen = [entry.sitemap_url], 0
         while queue and seen <= MAX_CHILD_SITEMAPS:
             url = queue.pop(0)
             seen += 1
-            r = await client.get(url)
-            r.raise_for_status()
-            items, children = parse_sitemap(r.content)
+            if url != entry.sitemap_url and not on_domain(url, {domain}):
+                failures.append(f"{url}: child sitemap outside {domain}")
+                log.warning("skip child sitemap outside %s: %s", domain, url)
+                continue
+            content = await fetch(url, {domain})
+            if content is None:
+                continue
+            items, children = parse_sitemap(content)
             found += items
             queue += children
+    if tried and len(failures) == tried:
+        raise RuntimeError("all discovery URLs failed: " + "; ".join(failures))
     # Dedupe; prefer the entry that carries a date.
     by_url: dict[str, Candidate] = {}
     for c in found:
@@ -112,6 +193,7 @@ async def crawl_source(
     limit: int,
     since: datetime | None,
     stats: CrawlStats,
+    reindex: bool = False,
 ) -> None:
     candidates = await discover(client, entry)
     stats.discovered += len(candidates)
@@ -121,7 +203,9 @@ async def crawl_source(
         on_site = [c for c in on_site if c.published_at is None or c.published_at >= since]
     on_site.sort(key=_newest_first)
     on_site = on_site[:limit]
-    known = await known_urls(engine, tables, [c.url for c in on_site])
+    # reindex: re-extract and re-embed articles already stored (after a change to chunking, embedding or
+    # ClaimReview handling); upsert_document replaces their passages.
+    known = set() if reindex else await known_urls(engine, tables, [c.url for c in on_site], source_id)
     stats.skipped_known += len(known)
     todo = [c for c in on_site if c.url not in known]
     sem = asyncio.Semaphore(settings.crawler_concurrency)
@@ -132,7 +216,11 @@ async def crawl_source(
                 if not await robots.allowed(c.url):
                     stats.skipped_robots += 1
                     return
-                r = await client.get(c.url)
+                try:
+                    r = await safe_get(client, c.url, {host_of(entry.domain)})
+                except BlockedURL:
+                    stats.skipped_offsite += 1  # off-domain redirect or non-public address: not requested
+                    return
                 r.raise_for_status()
                 final_url = str(r.url)
                 if whitelist.lookup(final_url) is not entry:
@@ -143,14 +231,19 @@ async def crawl_source(
                     stats.failed += 1
                     return
                 chunks = chunk_text(article.text, settings.chunk_max_words)
-                vectors = await embedder.embed(chunks)
+                review = extract_claim_review(r.text)
+                if review:  # a fact-check's structured verdict becomes its own, searchable passage
+                    chunks.append(claim_review_text(review))
+                title = article.title or c.title
+                # Embed with the title so generic chunks ("Hence the claim is false") keep their subject.
+                vectors = await embedder.embed([f"{title}\n{ch}" if title else ch for ch in chunks])
                 await upsert_document(
                     engine, tables,
                     source_id=source_id, entry=entry, url=final_url, title=article.title or c.title,
-                    language=entry.language, published_at=c.published_at or article.published_at,
+                    language=c.language or entry.language, published_at=c.published_at or article.published_at,
                     full_text=article.text,
                     chunks=[ChunkIn(passage_id(final_url, i), t, v) for i, (t, v) in enumerate(zip(chunks, vectors))],
-                    embedding_model=embedder.model_version,
+                    embedding_model=embedder.model_version, claim_review=review,
                 )
                 stats.stored += 1
                 stats.passages += len(chunks)
@@ -173,6 +266,7 @@ async def crawl(
     only_domain: str | None = None,
     limit: int | None = None,
     since_days: float | None = None,
+    reindex: bool = False,
 ) -> CrawlStats:
     await init_db(engine, tables)
     source_ids = await sync_sources(engine, tables, whitelist)
@@ -182,7 +276,7 @@ async def crawl(
     for entry in whitelist.entries:
         if only_domain and host_of(entry.domain) != host_of(only_domain):
             continue
-        if not (entry.rss_url or entry.sitemap_url):
+        if not (entry.feeds or entry.sitemap_url):
             log.info("skip %s: no rss_url or sitemap_url", entry.name)
             continue
         try:
@@ -190,6 +284,7 @@ async def crawl(
                 entry, source_ids[host_of(entry.domain)], client=client, robots=robots, whitelist=whitelist,
                 engine=engine, tables=tables, embedder=embedder, settings=settings,
                 limit=limit or settings.crawler_max_articles_per_source, since=since, stats=stats,
+                reindex=reindex,
             )
         except Exception as exc:
             stats.errors.append(f"{entry.name}: {type(exc).__name__}: {exc}")
@@ -210,7 +305,7 @@ async def _main(args: argparse.Namespace) -> int:
             for entry in whitelist.entries:
                 if args.source and host_of(entry.domain) != host_of(args.source):
                     continue
-                if entry.rss_url or entry.sitemap_url:
+                if entry.feeds or entry.sitemap_url:
                     for c in (await discover(client, entry))[: args.limit or 20]:
                         print(f"{entry.name}\t{c.published_at}\t{c.url}")
             return 0
@@ -222,7 +317,7 @@ async def _main(args: argparse.Namespace) -> int:
             stats = await crawl(
                 settings, engine=engine, tables=build_tables(settings.embedding_dim), whitelist=whitelist,
                 embedder=build_embedder(settings), client=client, only_domain=args.source,
-                limit=args.limit, since_days=args.since_days,
+                limit=args.limit, since_days=args.since_days, reindex=args.reindex,
             )
         finally:
             await engine.dispose()
@@ -242,6 +337,8 @@ def main() -> None:
     ap.add_argument("--limit", type=int, help="max new articles per source")
     ap.add_argument("--since-days", type=float, help="skip articles older than this")
     ap.add_argument("--dry-run", action="store_true", help="discover and print URLs; store nothing")
+    ap.add_argument("--reindex", action="store_true",
+                    help="re-extract and re-embed articles already in the index (after an indexing change)")
     raise SystemExit(asyncio.run(_main(ap.parse_args())))
 
 

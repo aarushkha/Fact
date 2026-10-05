@@ -6,9 +6,10 @@ import json
 from datetime import datetime
 from typing import AsyncIterator
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
+from app.api.security import authenticate, guard_check
 from app.config import ROOT_DIR
 from app.models.schemas import CheckInput, CheckResponse
 from app.pipeline.orchestrator import Pipeline
@@ -53,10 +54,15 @@ async def index() -> FileResponse:
 @router.get("/api/health")
 async def health(request: Request) -> dict:
     p = _pipeline(request)
-    return {"ok": True, "mock_mode": request.app.state.settings.mock_mode, "model_versions": p.a.model_versions()}
+    return {
+        "ok": True,
+        "mock_mode": request.app.state.settings.mock_mode,
+        "auth_required": bool(request.app.state.api_keys),
+        "model_versions": p.a.model_versions(),
+    }
 
 
-@router.post("/api/check", response_model=CheckResponse)
+@router.post("/api/check", response_model=CheckResponse, dependencies=[Depends(guard_check)])
 async def check(
     request: Request,
     text: str | None = Form(None),
@@ -70,7 +76,7 @@ async def check(
         raise HTTPException(500, str(exc))
 
 
-@router.post("/api/check/stream")
+@router.post("/api/check/stream", dependencies=[Depends(guard_check)])
 async def check_stream(
     request: Request,
     text: str | None = Form(None),
@@ -88,7 +94,22 @@ async def check_stream(
     )
 
 
-@router.get("/api/checks/{check_id}", response_model=CheckResponse)
+@router.get("/api/monitoring", dependencies=[Depends(authenticate)])
+async def monitoring(request: Request, hours: float = 24) -> dict:
+    from app.monitoring import monitoring_report
+
+    if not 0 < hours <= 24 * 30:
+        raise HTTPException(422, "hours must be in (0, 720]")
+    p = _pipeline(request)
+    return await monitoring_report(p.store, p.clock(), hours)
+
+
+@router.get("/monitor", include_in_schema=False)
+async def monitor_page() -> FileResponse:
+    return FileResponse(ROOT_DIR / "web" / "monitor.html")
+
+
+@router.get("/api/checks/{check_id}", response_model=CheckResponse, dependencies=[Depends(authenticate)])
 async def get_check(request: Request, check_id: str) -> CheckResponse:
     found = await _pipeline(request).store.get_check(check_id)
     if found is None:

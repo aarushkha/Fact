@@ -105,3 +105,29 @@ async def test_claim_judge_only_sees_relevant_passages():
     irr = passage("irr", tier=1, text="Cricket scores from Pune today.")
     r = await judge_claim(claim(), [rel, irr], Spy(), 100, T)
     assert seen["ids"] == ["rel"] and r.status == Status.CONFIRMED and r.probabilities
+
+
+def test_same_event_gate_turns_other_incidents_irrelevant():
+    from app.pipeline.judge import apply_same_event_gate
+
+    other = judgment("a", CON).model_copy(update={"same_event": 0.3})
+    gated = apply_same_event_gate(other, 0.6)
+    assert gated.stance == Stance.IRRELEVANT and gated.probability == 0.7
+    same = judgment("b", CON).model_copy(update={"same_event": 0.9})
+    assert apply_same_event_gate(same, 0.6) == same
+    assert apply_same_event_gate(judgment("c", SUP), 0.6).stance == SUP  # not assessed -> unchanged
+
+
+async def test_unrelated_debunk_cannot_contradict():
+    from app.adapters.mock import MockClassifier
+    from app.pipeline.judge import judge_claim
+    from .helpers import claim
+
+    class OtherIncident(MockClassifier):
+        async def judge_passage(self, c, p):
+            j = await super().judge_passage(c, p)
+            return j.model_copy(update={"same_event": 0.2})
+
+    p = passage("x", tier=2, text="Mumbai airport video is false, the viral clip is from another airport, fact-check finds.")
+    r = await judge_claim(claim(), [p], OtherIncident(), 100, T)
+    assert r.status == Status.UNVERIFIED_EVIDENCE_MISSING and r.effective == []

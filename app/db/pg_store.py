@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import case, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.db.store import CachedVerdict, StageRun, entity_keys
+from app.db.store import CachedVerdict, DueRecheck, StageRun, entity_keys
 from app.db.tables import Tables
 from app.jsonable import to_jsonable
-from app.models.schemas import DEFINITIVE_STATUSES, CheckResponse, ClaimResult, Entity, SourceOut
+from app.models.schemas import DEFINITIVE_STATUSES, UNVERIFIED_STATUSES, CheckResponse, ClaimResult, Entity, SourceOut
 
 
 def _json(value: Any) -> Any:
@@ -64,6 +64,7 @@ class PgStore:
             .select_from(c.join(v, v.c.claim_id == c.c.id))
             .where(
                 v.c.status.in_([s.value for s in DEFINITIVE_STATUSES]),
+                v.c.superseded_at.is_(None),
                 (v.c.recheck_at.is_(None)) | (v.c.recheck_at > now),
                 c.c.embedding_model == embedding_model,
                 c.c.entity_keys.overlap(keys),
@@ -93,6 +94,9 @@ class PgStore:
         sources: list[SourceOut],
         model_versions: dict[str, str],
         recheck_at: datetime | None,
+        post_date: datetime | None = None,
+        signals: dict | None = None,
+        created_at: datetime | None = None,
     ) -> None:
         async with self.engine.begin() as conn:
             claim_id = (
@@ -108,6 +112,9 @@ class PgStore:
                         entity_keys=sorted(entity_keys(entities)),
                         embedding=embedding,
                         embedding_model=embedding_model,
+                        post_date=post_date,
+                        signals=_json(signals) if signals else None,
+                        **({"created_at": created_at} if created_at else {}),
                     )
                     .returning(self.t.claims.c.id)
                 )
@@ -123,6 +130,73 @@ class PgStore:
                     recheck_at=recheck_at,
                 )
             )
+
+    async def similar_claim_stats(
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+    ) -> dict:
+        from datetime import timedelta
+
+        c = self.t.claims
+        similar = (1 - c.c.embedding.cosine_distance(embedding)) >= threshold
+        stmt = select(
+            func.count().filter(c.c.created_at >= now - timedelta(hours=24)),
+            func.count(),
+            func.min(c.c.created_at),
+        ).where(c.c.embedding_model == embedding_model, c.c.created_at >= since, c.c.created_at <= now, similar)
+        async with self.engine.connect() as conn:
+            n24, n7, first = (await conn.execute(stmt)).one()
+        return {"count_24h": n24, "count_7d": n7, "first_seen": first}
+
+    async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:
+        sr, ch, c, v = self.t.stage_runs, self.t.checks, self.t.claims, self.t.verdicts
+        async with self.engine.connect() as conn:
+            runs = (await conn.execute(
+                select(sr.c.stage, sr.c.latency_ms, sr.c.model_version, sr.c.error,
+                       case((sr.c.stage == "verify", sr.c.outputs), else_=None).label("outputs"))
+                .where(sr.c.started_at >= since).order_by(sr.c.id.desc()).limit(limit)
+            )).mappings().all()
+            checks = (await conn.execute(select(ch.c.id, ch.c.status).where(ch.c.created_at >= since))).mappings().all()
+            claims = (await conn.execute(
+                select(v.c.status, c.c.text_en, c.c.signals, v.c.rechecked_from,
+                       v.c.superseded_at.is_not(None).label("superseded"))
+                .select_from(v.join(c, c.c.id == v.c.claim_id)).where(c.c.created_at >= since)
+            )).mappings().all()
+        return {"stage_runs": [dict(r) for r in runs], "checks": [dict(r) for r in checks],
+                "claims": [dict(r) for r in claims]}
+
+    async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
+        c, v = self.t.claims, self.t.verdicts
+        stmt = (
+            select(v.c.id, c.c.check_id, c.c.claim_key, c.c.text_original, c.c.text_en, v.c.status, c.c.post_date,
+                   v.c.recheck_at)
+            .select_from(v.join(c, c.c.id == v.c.claim_id))
+            .where(
+                v.c.status.in_([s.value for s in UNVERIFIED_STATUSES]),
+                v.c.superseded_at.is_(None),
+                v.c.recheck_at <= now,
+                func.coalesce(c.c.post_date, c.c.created_at) >= oldest,
+            )
+            .order_by(v.c.recheck_at)
+            .limit(limit)
+        )
+        async with self.engine.connect() as conn:
+            return [DueRecheck(*row) for row in (await conn.execute(stmt)).all()]
+
+    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> bool:
+        c, v = self.t.claims, self.t.verdicts
+        async with self.engine.begin() as conn:
+            new_claim_ids = select(c.c.id).where(c.c.check_id == new_check_id, c.c.claim_key == claim_key)
+            linked = await conn.execute(
+                update(v).where(v.c.claim_id.in_(new_claim_ids)).values(rechecked_from=old_verdict_id)
+            )
+            if not linked.rowcount:
+                return False
+            await conn.execute(update(v).where(v.c.id == old_verdict_id).values(superseded_at=func.now()))
+        return True
+
+    async def postpone_recheck(self, verdict_id: int, until: datetime) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(update(self.t.verdicts).where(self.t.verdicts.c.id == verdict_id).values(recheck_at=until))
 
     async def finish_check(self, response: CheckResponse) -> None:
         async with self.engine.begin() as conn:

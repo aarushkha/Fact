@@ -11,7 +11,7 @@ from app.adapters.base import Embedder, FactCheckSearch
 from app.db.store import CachedVerdict, Store, cosine
 from app.models.schemas import Claim, FactCheckHit, Passage, Status
 from app.sources import Whitelist
-from app.text import source_id_for
+from app.text import source_id_for, verdict_sentence
 
 # Conservative exact-match table (after lowercasing and stripping punctuation).
 # Ratings not listed here never short-circuit; whitelisted reviews then go to the judge as evidence.
@@ -24,6 +24,7 @@ RATING_MAP: dict[str, Status] = {
     "गलत": Status.CONTRADICTED,
     "फर्जी": Status.CONTRADICTED,
     "खोटे": Status.CONTRADICTED,
+    "चूक": Status.CONTRADICTED,
     "true": Status.CONFIRMED,
     "correct": Status.CONFIRMED,
     "accurate": Status.CONFIRMED,
@@ -33,6 +34,7 @@ RATING_MAP: dict[str, Status] = {
     "misattributed": Status.MISLEADING_CONTEXT,
     "भ्रामक": Status.MISLEADING_CONTEXT,
     "दिशाभूल करणारे": Status.MISLEADING_CONTEXT,
+    "दिशाभूल": Status.MISLEADING_CONTEXT,
 }
 
 
@@ -54,13 +56,8 @@ def review_passage(hit: FactCheckHit, whitelist: Whitelist) -> Passage | None:
     entry = whitelist.lookup(hit.review_url) or whitelist.lookup(hit.publisher_site)
     if entry is None:
         return None
-    text = " ".join(
-        x for x in (
-            hit.review_title,
-            f'Claim reviewed: "{hit.claim_text}".',
-            f"Rating: {hit.textual_rating}.",
-        ) if x
-    )
+    title = (hit.review_title or "").strip().rstrip(".")
+    text = (f"{title}. " if title else "") + verdict_sentence(hit.textual_rating, hit.claim_text)
     return Passage(
         id="fc_" + source_id_for(hit.review_url)[4:],
         source_id=source_id_for(hit.review_url),
