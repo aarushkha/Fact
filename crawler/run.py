@@ -3,6 +3,7 @@
     python -m crawler.run                       # every source in sources.yaml with an rss_url/sitemap_url
     python -m crawler.run --source example.org  # one source
     python -m crawler.run --dry-run             # discover only, print candidate URLs
+    python -m crawler.run --reindex             # also re-extract/re-embed articles already indexed
 
 Polls each source's RSS/Atom feed and/or sitemap, keeps only URLs on that source's domain, respects
 robots.txt, extracts article text with trafilatura, chunks it, embeds it and stores it with url,
@@ -71,21 +72,42 @@ class Robots:
 
 
 async def discover(client: httpx.AsyncClient, entry: SourceEntry) -> list[Candidate]:
+    """Candidates from every feed and sitemap of a source. One failing URL is logged and skipped;
+    only a source whose discovery URLs all fail raises."""
     found: list[Candidate] = []
-    for feed_url in entry.feeds:
-        r = await client.get(feed_url)
-        r.raise_for_status()
-        found += parse_feed(r.content)
+    tried, failures = 0, []
+
+    async def fetch(url: str) -> bytes | None:
+        nonlocal tried
+        tried += 1
+        try:
+            r = await client.get(url)
+            r.raise_for_status()
+            return r.content
+        except httpx.HTTPError as exc:
+            failures.append(f"{url}: {type(exc).__name__}: {exc}")
+            log.warning("discovery failed %s: %s", url, exc)
+            return None
+
+    for feed in entry.feed_specs:
+        content = await fetch(feed.url)
+        if content is not None:
+            for c in parse_feed(content):
+                c.language = feed.language
+                found.append(c)
     if entry.sitemap_url:
         queue, seen = [entry.sitemap_url], 0
         while queue and seen <= MAX_CHILD_SITEMAPS:
             url = queue.pop(0)
             seen += 1
-            r = await client.get(url)
-            r.raise_for_status()
-            items, children = parse_sitemap(r.content)
+            content = await fetch(url)
+            if content is None:
+                continue
+            items, children = parse_sitemap(content)
             found += items
             queue += children
+    if tried and len(failures) == tried:
+        raise RuntimeError("all discovery URLs failed: " + "; ".join(failures))
     # Dedupe; prefer the entry that carries a date.
     by_url: dict[str, Candidate] = {}
     for c in found:
@@ -112,6 +134,7 @@ async def crawl_source(
     limit: int,
     since: datetime | None,
     stats: CrawlStats,
+    reindex: bool = False,
 ) -> None:
     candidates = await discover(client, entry)
     stats.discovered += len(candidates)
@@ -121,7 +144,9 @@ async def crawl_source(
         on_site = [c for c in on_site if c.published_at is None or c.published_at >= since]
     on_site.sort(key=_newest_first)
     on_site = on_site[:limit]
-    known = await known_urls(engine, tables, [c.url for c in on_site])
+    # reindex: re-extract and re-embed articles already stored (after a change to chunking, embedding or
+    # ClaimReview handling); upsert_document replaces their passages.
+    known = set() if reindex else await known_urls(engine, tables, [c.url for c in on_site])
     stats.skipped_known += len(known)
     todo = [c for c in on_site if c.url not in known]
     sem = asyncio.Semaphore(settings.crawler_concurrency)
@@ -152,7 +177,7 @@ async def crawl_source(
                 await upsert_document(
                     engine, tables,
                     source_id=source_id, entry=entry, url=final_url, title=article.title or c.title,
-                    language=entry.language, published_at=c.published_at or article.published_at,
+                    language=c.language or entry.language, published_at=c.published_at or article.published_at,
                     full_text=article.text,
                     chunks=[ChunkIn(passage_id(final_url, i), t, v) for i, (t, v) in enumerate(zip(chunks, vectors))],
                     embedding_model=embedder.model_version, claim_review=review,
@@ -178,6 +203,7 @@ async def crawl(
     only_domain: str | None = None,
     limit: int | None = None,
     since_days: float | None = None,
+    reindex: bool = False,
 ) -> CrawlStats:
     await init_db(engine, tables)
     source_ids = await sync_sources(engine, tables, whitelist)
@@ -195,6 +221,7 @@ async def crawl(
                 entry, source_ids[host_of(entry.domain)], client=client, robots=robots, whitelist=whitelist,
                 engine=engine, tables=tables, embedder=embedder, settings=settings,
                 limit=limit or settings.crawler_max_articles_per_source, since=since, stats=stats,
+                reindex=reindex,
             )
         except Exception as exc:
             stats.errors.append(f"{entry.name}: {type(exc).__name__}: {exc}")
@@ -227,7 +254,7 @@ async def _main(args: argparse.Namespace) -> int:
             stats = await crawl(
                 settings, engine=engine, tables=build_tables(settings.embedding_dim), whitelist=whitelist,
                 embedder=build_embedder(settings), client=client, only_domain=args.source,
-                limit=args.limit, since_days=args.since_days,
+                limit=args.limit, since_days=args.since_days, reindex=args.reindex,
             )
         finally:
             await engine.dispose()
@@ -247,6 +274,8 @@ def main() -> None:
     ap.add_argument("--limit", type=int, help="max new articles per source")
     ap.add_argument("--since-days", type=float, help="skip articles older than this")
     ap.add_argument("--dry-run", action="store_true", help="discover and print URLs; store nothing")
+    ap.add_argument("--reindex", action="store_true",
+                    help="re-extract and re-embed articles already in the index (after an indexing change)")
     raise SystemExit(asyncio.run(_main(ap.parse_args())))
 
 

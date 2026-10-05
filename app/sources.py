@@ -10,10 +10,16 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+class Feed(BaseModel):
+    url: str
+    language: str | None = None  # defaults to the entry's language
+
+
 class SourceEntry(BaseModel):
     name: str
     domain: str
-    rss_url: str | list[str] | None = None  # one feed or several (e.g. per-language feeds)
+    # One feed or several; a multilingual source lists {url, language} per feed so each article keeps its language.
+    rss_url: str | list[str | Feed] | None = None
     sitemap_url: str | None = None
     language: str | None = None
     tier: int = Field(ge=1, le=3)  # 1 = primary, 2 = original reporting, 3 = aggregator
@@ -21,10 +27,16 @@ class SourceEntry(BaseModel):
     todo: bool = False  # placeholder entries are never used as evidence
 
     @property
-    def feeds(self) -> list[str]:
+    def feed_specs(self) -> list[Feed]:
         if not self.rss_url:
             return []
-        return [self.rss_url] if isinstance(self.rss_url, str) else list(self.rss_url)
+        items = [self.rss_url] if isinstance(self.rss_url, str) else self.rss_url
+        out = [Feed(url=f) if isinstance(f, str) else f for f in items]
+        return [Feed(url=f.url, language=f.language or self.language) for f in out]
+
+    @property
+    def feeds(self) -> list[str]:
+        return [f.url for f in self.feed_specs]
 
 
 def host_of(url_or_domain: str) -> str:

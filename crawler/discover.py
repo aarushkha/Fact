@@ -19,6 +19,7 @@ class Candidate:
     url: str
     published_at: datetime | None = None
     title: str | None = None
+    language: str | None = None  # from the feed it came from; None -> the source's language
 
     def __post_init__(self) -> None:
         self.url = urldefrag(self.url.strip())[0]  # "#publisher=..." fragments would duplicate documents

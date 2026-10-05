@@ -5,6 +5,7 @@
 #       3 = aggregator (outlets that mostly repeat social-media posts)
 # kind: police | court | government | institution | wire | outlet | factchecker | aggregator
 # rss_url / sitemap_url: real feed URLs only. Every URL below returned a valid feed/sitemap on 2026-10-05.
+# A feed in another language than its entry is written {url: ..., language: ...} (checked against its articles).
 # todo: true -> entry is ignored until filled in.
 #
 # Feeds not added because they could not be verified from the build environment (HTTP 403 / timeout / none):
@@ -21,9 +22,9 @@ sources:
   # ---- tier 2: fact-checkers ----
   - {name: Alt News, domain: altnews.in, rss_url: "https://www.altnews.in/feed/", language: en, tier: 2, kind: factchecker}
   - {name: Factly, domain: factly.in, rss_url: "https://factly.in/feed/", language: en, tier: 2, kind: factchecker}
-  - {name: Vishvas News, domain: vishvasnews.com, rss_url: ["https://www.vishvasnews.com/feed/", "https://www.vishvasnews.com/marathi/feed/"], language: hi, tier: 2, kind: factchecker}
-  - {name: Newschecker, domain: newschecker.in, rss_url: ["https://newschecker.in/feed", "https://www.newschecker.in/hi/feed", "https://newschecker.in/mr/feed"], language: en, tier: 2, kind: factchecker}
-  - {name: Fact Crescendo, domain: factcrescendo.com, rss_url: ["https://www.factcrescendo.com/feed/", "https://marathi.factcrescendo.com/feed/"], language: hi, tier: 2, kind: factchecker}
+  - {name: Vishvas News, domain: vishvasnews.com, rss_url: ["https://www.vishvasnews.com/feed/", {url: "https://www.vishvasnews.com/marathi/feed/", language: mr}], language: hi, tier: 2, kind: factchecker}
+  - {name: Newschecker, domain: newschecker.in, rss_url: ["https://newschecker.in/feed", {url: "https://www.newschecker.in/hi/feed", language: hi}, {url: "https://newschecker.in/mr/feed", language: mr}], language: en, tier: 2, kind: factchecker}
+  - {name: Fact Crescendo, domain: factcrescendo.com, rss_url: ["https://www.factcrescendo.com/feed/", {url: "https://marathi.factcrescendo.com/feed/", language: mr}], language: hi, tier: 2, kind: factchecker}
   # Whitelisted without a feed (feeds blocked/empty from the build environment): their reviews still count
   # when they arrive through the Google Fact Check API.
   - {name: BOOM, domain: boomlive.in, language: en, tier: 2, kind: factchecker}

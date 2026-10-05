@@ -54,6 +54,8 @@ def extract_claim_review(html: str) -> dict | None:
                 continue
             rating = node.get("reviewRating") or {}
             item = node.get("itemReviewed") or {}
+            if not isinstance(rating, dict) or not isinstance(item, dict):
+                continue
             author = item.get("author") or {}
             out = {
                 "claim_reviewed": str(node.get("claimReviewed") or "").strip(),

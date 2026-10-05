@@ -99,3 +99,46 @@ def test_source_entry_accepts_several_feeds():
     assert SourceEntry(name="x", domain="x.in", tier=2, rss_url=["a", "b"]).feeds == ["a", "b"]
     assert SourceEntry(name="x", domain="x.in", tier=2, rss_url="a").feeds == ["a"]
     assert SourceEntry(name="x", domain="x.in", tier=2).feeds == []
+
+
+def test_extract_claim_review_skips_malformed_nodes():
+    from crawler.extract import extract_claim_review
+
+    bad = '{"@type": "ClaimReview", "claimReviewed": "x", "reviewRating": "False", "itemReviewed": "y"}'
+    good = '{"@type": "ClaimReview", "claimReviewed": "Video shows floods", "reviewRating": {"alternateName": "False"}}'
+    html = f'<script type="application/ld+json">[{bad}, {good}]</script>'
+    assert extract_claim_review(html)["claim_reviewed"] == "Video shows floods"
+
+
+def test_feed_language_overrides_entry_language():
+    from app.sources import SourceEntry
+
+    e = SourceEntry(name="x", domain="x.in", tier=2, language="hi",
+                    rss_url=["https://x.in/feed", {"url": "https://x.in/mr/feed", "language": "mr"}])
+    assert [(f.url, f.language) for f in e.feed_specs] == [("https://x.in/feed", "hi"), ("https://x.in/mr/feed", "mr")]
+    assert e.feeds == ["https://x.in/feed", "https://x.in/mr/feed"]
+
+
+async def test_discover_survives_one_failing_feed_and_tags_languages():
+    import httpx
+    import pytest
+
+    from app.sources import SourceEntry
+    from crawler.run import discover
+
+    mr_rss = RSS.replace(b"wire.mock.example/one", b"wire.mock.example/mr-one")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return {"/down": httpx.Response(503), "/mr": httpx.Response(200, content=mr_rss)}.get(
+            request.url.path, httpx.Response(200, content=RSS))
+
+    entry = SourceEntry(name="w", domain="wire.mock.example", tier=1, language="en",
+                        rss_url=["https://wire.mock.example/down", "https://wire.mock.example/feed",
+                                 {"url": "https://wire.mock.example/mr", "language": "mr"}])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        found = {c.url: c.language for c in await discover(client, entry)}
+        assert found["https://wire.mock.example/one"] == "en"
+        assert found["https://wire.mock.example/mr-one"] == "mr"
+        dead = SourceEntry(name="d", domain="wire.mock.example", tier=1, rss_url="https://wire.mock.example/down")
+        with pytest.raises(RuntimeError, match="all discovery URLs failed"):
+            await discover(client, dead)
