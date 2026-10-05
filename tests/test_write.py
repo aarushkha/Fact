@@ -86,3 +86,11 @@ async def test_restated_claim_dropped_under_contradicted():
     # Under CONFIRMED a sentence that matches the claim is exactly what the summary should say.
     r = await verify_sentences(drafts[:1], [debunk], MockNLIVerifier(), 0.5, claim_text=claim_text, status="CONFIRMED")
     assert [s.sentence for s in r.kept] == ["Mumbai airport is closed for a week."]
+
+
+async def test_correction_phrased_as_is_false_is_kept_under_contradicted():
+    p = passage("p8", text="The claim that Mumbai airport is closed for a week is false.")
+    d = DraftSentence(sentence="The claim that Mumbai airport is closed for a week is false.", passage_ids=["p8"])
+    r = await verify_sentences([d], [p], MockNLIVerifier(), 0.5, claim_text="Mumbai airport is closed for a week.",
+                               status="CONTRADICTED")
+    assert [s.sentence for s in r.kept] == [d.sentence]

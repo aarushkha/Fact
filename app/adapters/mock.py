@@ -287,15 +287,20 @@ class MockEmbedder:
 
 
 NEGATIONS = {"not", "no", "never", "nor", "isn't", "wasn't", "aren't", "didn't", "doesn't", "नहीं", "नाही"}
+# Verdict words a debunk uses instead of "not" ("The claim that ... is false"): they oppose the claim too.
+CORRECTIVES = {"false", "fake", "untrue", "misleading", "hoax", "baseless", "debunked",
+               "फर्जी", "झूठा", "झूठी", "भ्रामक", "खोटा", "खोटी", "दिशाभूल"}
 
 
 def _negated(text: str) -> bool:
-    return bool(NEGATIONS & set(re.findall(r"[\w\u0900-\u097F']+", text.lower())))  # tokens() drops "not"
+    words = set(re.findall(r"[\w\u0900-\u097F']+", text.lower()))  # tokens() drops "not"
+    return bool((NEGATIONS | CORRECTIVES) & words)
 
 
 class MockNLIVerifier:
     """Entailment = share of the hypothesis' content words present in the premise, unless exactly one
-    of the two is negated: then the overlap counts as contradiction (a real NLI model sees "not")."""
+    of the two is negated or corrective ("not", "is false"): then the overlap counts as contradiction
+    (a real NLI model sees the polarity)."""
 
     model_version = MOCK_VERSION
 

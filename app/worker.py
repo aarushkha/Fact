@@ -42,13 +42,7 @@ async def main_async(once: bool, crawl: bool) -> None:
         while True:
             now = time.monotonic()
             # A failed pass is logged and waits for its next slot: one bad pass must not stop the worker.
-            if now >= next_recheck:
-                next_recheck = now + s.recheck_interval_minutes * 60
-                try:
-                    results = await run_rechecks(pipeline, s.recheck_batch_size)
-                    log.info("recheck pass: %d claims", len(results))
-                except Exception:
-                    log.exception("recheck pass failed")
+            # Crawl first, so a recheck that is due at the same time sees the newly indexed evidence.
             if crawl and not s.mock_mode and now >= next_crawl:
                 next_crawl = now + s.crawl_interval_minutes * 60
                 try:
@@ -59,6 +53,13 @@ async def main_async(once: bool, crawl: bool) -> None:
                     log.info("crawl pass: stored=%d passages=%d failed=%d", stats.stored, stats.passages, stats.failed)
                 except Exception:
                     log.exception("crawl pass failed")
+            if now >= next_recheck:
+                next_recheck = now + s.recheck_interval_minutes * 60
+                try:
+                    results = await run_rechecks(pipeline, s.recheck_batch_size)
+                    log.info("recheck pass: %d claims", len(results))
+                except Exception:
+                    log.exception("recheck pass failed")
             if once:
                 return
             await asyncio.sleep(30)

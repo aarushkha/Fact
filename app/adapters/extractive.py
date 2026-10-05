@@ -36,7 +36,7 @@ class SentenceExtractor:
             en = list(await asyncio.gather(*(self.translator.translate(s, source) for s in orig))) if source else orig
         return [
             RawClaim(text_original=o, text_en=e, entities=guess_entities(e))
-            for o, e in zip(orig, en) if e.strip()
+            for o, e in zip(orig, en, strict=True) if e.strip()
         ]
 
 
