@@ -7,12 +7,16 @@ so the citation check alone would keep it and show the false claim as the summar
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
 
-from app.adapters.base import NLIVerifier
+from app.adapters.base import NLIVerifier, Translator
 from app.models.schemas import DraftSentence, Passage, Status, SummarySentence
-from app.text import overlap_ratio, sentences
+from app.text import has_devanagari, overlap_ratio, sentences
+
+log = logging.getLogger("fact.write")
 
 MAX_SENTENCES = 3
 MAX_WINDOWS = 4  # whole passage + the 3 windows that share most words with the sentence
@@ -42,6 +46,36 @@ def premise_windows(text: str) -> list[str]:
     return list(dict.fromkeys(w for w in windows if w.strip()))
 
 
+async def to_english(drafts: list[DraftSentence], passages: list[Passage], translator: Translator) -> list[DraftSentence]:
+    """Summaries are shown in English. A draft quoting non-English evidence is translated and keeps its
+    original as `source_sentence` (used to pick premise windows). NLI then checks the English sentence
+    against the original passage: real mDeBERTa scores Marathi→Marathi pairs near chance (a sentence
+    against itself: 0.27-0.36 entailment) but a Marathi passage → English sentence well (0.68-0.85).
+    A draft whose translation fails is dropped rather than shown untranslated."""
+    by_id = {p.id: p for p in passages}
+
+    async def one(d: DraftSentence) -> DraftSentence | None:
+        if not has_devanagari(d.sentence):
+            return d
+        source = next((by_id[i].language for i in d.passage_ids
+                       if i in by_id and by_id[i].language and by_id[i].language != "en"), None)
+        try:
+            if source is None:
+                detected = await translator.detect(d.sentence)
+                source = next((lang for lang in detected if lang != "en"), None)
+            if source is None:
+                return d
+            english = (await translator.translate(d.sentence, source)).strip()
+        except Exception as exc:
+            log.warning("summary translation failed (%s): %s", type(exc).__name__, exc)
+            return None
+        if not english or has_devanagari(english):
+            return None
+        return DraftSentence(sentence=english, passage_ids=d.passage_ids, source_sentence=d.sentence)
+
+    return [d for d in await asyncio.gather(*(one(d) for d in drafts)) if d is not None]
+
+
 @dataclass
 class VerifyReport:
     kept: list[SummarySentence] = field(default_factory=list)
@@ -69,7 +103,7 @@ async def verify_sentences(
             report.dropped.append({"sentence": d.sentence, "reason": "no valid citation"})
             continue
         cited_any.add(i)
-        pairs.extend((i, p, w) for p in cited for w in best_windows(p.text, d.sentence))
+        pairs.extend((i, p, w) for p in cited for w in best_windows(p.text, d.source_sentence or d.sentence))
     status_value = getattr(status, "value", status)
     echo_check = sorted(cited_any) if claim_text and status_value in FAILS else []
     nli_pairs = [(w, drafts[i].sentence) for i, _, w in pairs] + [(drafts[i].sentence, claim_text) for i in echo_check]

@@ -105,3 +105,40 @@ async def test_labelled_claim_quote_dropped_under_fails_status_only():
     assert r.kept == [] and r.dropped[0]["reason"] == "quotes the claim under MISLEADING_CONTEXT"
     r = await verify_sentences([d], [p], MockNLIVerifier(), 0.5, claim_text=other, status="CONFIRMED")
     assert len(r.kept) == 1
+
+
+async def test_marathi_quote_is_shown_in_english_and_verified_against_the_original():
+    from app.adapters.mock import MockTranslator
+    from app.pipeline.write import to_english
+
+    mr_text = "नाशिक शहर पोलिसांनी गोदावरी नदीवरील जुन्या पादचारी पुलाचा भाग रविवारी संध्याकाळी कोसळल्याची पुष्टी केली."
+    p = passage("pmr", text=mr_text).model_copy(update={"language": "mr"})
+    from app.adapters.extractive import ExtractiveWriter
+    from app.adapters.mock import MockEmbedder
+
+    from .helpers import claim
+
+    quoted = await ExtractiveWriter(MockEmbedder(64)).write_summary(claim("A footbridge in Nashik collapsed."), [p], "CONFIRMED")
+    assert [d.sentence for d in quoted] == [mr_text]  # the writer quotes verbatim, in Marathi
+    drafts = await to_english(quoted, [p], MockTranslator())
+    assert drafts[0].sentence.startswith("Nashik City Police confirmed") and drafts[0].source_sentence == mr_text
+    r = await verify_sentences(drafts, [p], MockNLIVerifier(), 0.5, claim_text="A footbridge in Nashik collapsed.",
+                               status="CONFIRMED")
+    assert [s.sentence for s in r.kept] == [drafts[0].sentence]
+
+
+async def test_untranslatable_quote_is_dropped_not_shown_in_marathi():
+    from app.pipeline.write import to_english
+
+    class Down:
+        model_version = "down"
+
+        async def detect(self, text):
+            return ["mr"]
+
+        async def translate(self, text, source, target="en"):
+            raise RuntimeError("translator down")
+
+    p = passage("pmr", text="काहीतरी मराठी वाक्य येथे आहे.").model_copy(update={"language": "mr"})
+    d = DraftSentence(sentence="काहीतरी मराठी वाक्य येथे आहे.", passage_ids=["pmr"])
+    assert await to_english([d], [p], Down()) == []

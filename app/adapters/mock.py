@@ -297,6 +297,14 @@ def _negated(text: str) -> bool:
     return bool((NEGATIONS | CORRECTIVES) & words)
 
 
+def _mock_english(text: str) -> str:
+    """Known Marathi/Hindi sentences replaced by their mock English translation (translations.yaml)."""
+    if not has_devanagari(text):
+        return text
+    table: dict[str, str] = _load("translations.yaml").get("translations", {})
+    return " ".join(table.get(s, s) for s in sentences(text))
+
+
 class MockNLIVerifier:
     """Entailment = share of the hypothesis' content words present in the premise, unless exactly one
     of the two is negated or corrective ("not", "is false"): then the overlap counts as contradiction
@@ -307,6 +315,7 @@ class MockNLIVerifier:
     async def score(self, pairs: list[tuple[str, str]]) -> list[NLIScore]:
         out = []
         for premise, hypothesis in pairs:
+            premise = _mock_english(premise)  # cross-lingual pairs: real mDeBERTa handles mr/hi -> en
             r = overlap_ratio(hypothesis, premise)
             if _negated(premise) != _negated(hypothesis):
                 out.append(NLIScore(entailment=0.0, neutral=1 - r, contradiction=r))
