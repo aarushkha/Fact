@@ -36,7 +36,8 @@ async def db():
     t = build_tables(DIM)
     async with engine.begin() as conn:
         await conn.run_sync(t.metadata.drop_all)
-    await init_db(engine, t)
+        await conn.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")
+    await init_db(engine, t)  # runs the Alembic migrations
     yield engine, t
     await engine.dispose()
 

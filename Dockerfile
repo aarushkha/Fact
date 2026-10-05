@@ -5,7 +5,7 @@ COPY pyproject.toml README.md ./
 COPY app app
 COPY crawler crawler
 COPY web web
-COPY sources.yaml ./
+COPY sources.yaml alembic.ini ./
 # Editable install so web/, sources.yaml and mock data resolve from /app.
 RUN pip install --no-cache-dir -e .
 # Self-hosted models for MOCK_MODE=false: docker compose build --build-arg INSTALL_MODELS=true

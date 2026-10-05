@@ -84,7 +84,7 @@ def parse_post_date(value: str | None, now: datetime) -> datetime | None:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-async def run_example(ex: dict, settings: Settings, adapters, whitelist, now: datetime) -> Row:
+async def run_example(ex: dict, settings: Settings, adapters, whitelist, now: datetime, trace: list | None = None) -> Row:
     store = InMemoryStore()  # fresh per example: no cache hits between eval examples
     pipeline = Pipeline(settings, adapters, store, whitelist, clock=lambda: now)
     image = (ROOT_DIR / ex["image_path"]).read_bytes() if ex.get("image_path") else None
@@ -94,8 +94,22 @@ async def run_example(ex: dict, settings: Settings, adapters, whitelist, now: da
     t0 = time.perf_counter()
     predicted, conf, n, err = "ERROR", 0.0, 0, ""
     try:
-        res = await pipeline.run(inp)
-        if res.claims:
+        res = None
+        events = []
+        async for ev in pipeline.stream(inp):
+            events.append({"event": ev.name, "data": ev.data})
+            if ev.name == "done":
+                from app.models.schemas import CheckResponse
+
+                res = CheckResponse.model_validate(ev.data)
+            elif ev.name == "error" and ev.data.get("fatal"):
+                raise RuntimeError(ev.data.get("message"))
+        if trace is not None:
+            stages = {r.stage: r.outputs for r in store.stage_runs if r.stage in ("factcheck", "retrieve", "judge", "verify")}
+            trace.append({"id": ex["id"], "expected": ex["expected_status"], "input": ex.get("input_text"),
+                          "events": [e for e in events if e["event"] in ("cache_hit", "evidence", "verdict")],
+                          "stages": stages})
+        if res and res.claims:
             predicted, conf, n = res.claims[0].status.value, res.claims[0].confidence, len(res.claims)
         else:
             predicted = "NO_CLAIMS"
@@ -170,7 +184,12 @@ async def main_async(args: argparse.Namespace) -> int:
     settings = get_settings()
     if args.threshold_sweep:
         settings = settings.model_copy(update={"confidence_threshold": 0.0})
-    examples = load_examples(Path(args.file), args.split)[: args.limit or None]
+    examples = load_examples(Path(args.file), args.split)
+    if args.ids:
+        wanted = set(args.ids.split(","))
+        examples = [e for e in examples if e["id"] in wanted]
+    examples = examples[: args.limit or None]
+    trace: list | None = [] if args.trace else None
     if not examples:
         print("No examples for split", args.split)
         return 1
@@ -185,7 +204,7 @@ async def main_async(args: argparse.Namespace) -> int:
     rows = []
     try:
         for ex in examples:  # sequential: keeps latency numbers honest and respects API rate limits
-            rows.append(await run_example(ex, settings, adapters, whitelist, now))
+            rows.append(await run_example(ex, settings, adapters, whitelist, now, trace))
             r = rows[-1]
             print(f"{r.id:<5} {r.expected:<28} -> {r.predicted:<28} {r.confidence:.2f} {r.latency_ms / 1000:5.1f}s {r.error}")
     finally:
@@ -211,6 +230,10 @@ async def main_async(args: argparse.Namespace) -> int:
     else:
         report["metrics"] = {"threshold": settings.confidence_threshold, **summarize(rows)}
     (out / f"eval_{args.split}_{stamp}.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    if trace is not None:
+        tpath = out / f"trace_{args.split}_{stamp}.jsonl"
+        tpath.write_text("".join(json.dumps(t, ensure_ascii=False, default=str) + "\n" for t in trace), encoding="utf-8")
+        print(f"trace: {tpath}")
 
     m = report.get("metrics") or report["at_configured_threshold"]
     print(f"\nthreshold={m['threshold']}  n={m['n']}  accuracy={m['accuracy']}  confident_wrong={m['confident_wrong_rate']}  "
@@ -234,6 +257,8 @@ def main() -> None:
     ap.add_argument("--file", default=str(ROOT_DIR / "eval" / "claims.jsonl"))
     ap.add_argument("--out", default=str(ROOT_DIR / "eval" / "out"))
     ap.add_argument("--limit", type=int, help="only the first N examples of the split")
+    ap.add_argument("--ids", help="comma-separated example ids to run")
+    ap.add_argument("--trace", action="store_true", help="write per-example events + judge/verify outputs (jsonl)")
     ap.add_argument("--threshold-sweep", action="store_true")
     ap.add_argument("--target", type=float, default=0.05, help="max confident-wrong rate for the sweep")
     raise SystemExit(asyncio.run(main_async(ap.parse_args())))
