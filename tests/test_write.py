@@ -73,3 +73,16 @@ def test_best_windows_bounded_and_relevant():
     text = " ".join(f"Sentence {i} about topic {i}." for i in range(12)) + " The bridge collapsed in Nashik."
     w = best_windows(text, "A bridge collapsed in Nashik.")
     assert len(w) == 4 and w[0] == text and w[1] == "The bridge collapsed in Nashik."
+
+
+async def test_restated_claim_dropped_under_contradicted():
+    debunk = passage("p9", text="Mumbai airport is closed for a week. This claim is false: the airport is not closed.")
+    drafts = [DraftSentence(sentence="Mumbai airport is closed for a week.", passage_ids=["p9"]),
+              DraftSentence(sentence="This claim is false: the airport is not closed.", passage_ids=["p9"])]
+    claim_text = "Mumbai airport is closed for a week."
+    r = await verify_sentences(drafts, [debunk], MockNLIVerifier(), 0.5, claim_text=claim_text, status="CONTRADICTED")
+    assert [s.sentence for s in r.kept] == ["This claim is false: the airport is not closed."]
+    assert r.dropped == [{"sentence": "Mumbai airport is closed for a week.", "reason": "restates the claim under CONTRADICTED"}]
+    # Under CONFIRMED a sentence that matches the claim is exactly what the summary should say.
+    r = await verify_sentences(drafts[:1], [debunk], MockNLIVerifier(), 0.5, claim_text=claim_text, status="CONFIRMED")
+    assert [s.sentence for s in r.kept] == ["Mumbai airport is closed for a week."]

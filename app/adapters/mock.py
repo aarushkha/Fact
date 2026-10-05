@@ -286,8 +286,16 @@ class MockEmbedder:
         return [self._embed_one(t) for t in texts]
 
 
+NEGATIONS = {"not", "no", "never", "nor", "isn't", "wasn't", "aren't", "didn't", "doesn't", "नहीं", "नाही"}
+
+
+def _negated(text: str) -> bool:
+    return bool(NEGATIONS & set(re.findall(r"[\w\u0900-\u097F']+", text.lower())))  # tokens() drops "not"
+
+
 class MockNLIVerifier:
-    """Entailment = share of the hypothesis' content words present in the premise."""
+    """Entailment = share of the hypothesis' content words present in the premise, unless exactly one
+    of the two is negated: then the overlap counts as contradiction (a real NLI model sees "not")."""
 
     model_version = MOCK_VERSION
 
@@ -295,7 +303,10 @@ class MockNLIVerifier:
         out = []
         for premise, hypothesis in pairs:
             r = overlap_ratio(hypothesis, premise)
-            out.append(NLIScore(entailment=r, neutral=1 - r, contradiction=0.0))
+            if _negated(premise) != _negated(hypothesis):
+                out.append(NLIScore(entailment=0.0, neutral=1 - r, contradiction=r))
+            else:
+                out.append(NLIScore(entailment=r, neutral=1 - r, contradiction=0.0))
         return out
 
 

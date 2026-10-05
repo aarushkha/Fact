@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     factcheck_similarity_threshold: float = 0.85
     factcheck_hit_confidence: float = 0.9
     nli_entailment_threshold: float = 0.5
+    # Under CONTRADICTED / MISLEADING_CONTEXT, drop a summary sentence that entails the claim this strongly
+    # (it restates the claim, e.g. a debunk's opening quote). Stricter than the citation check on purpose.
+    nli_restatement_threshold: float = 0.8
     too_early_window_hours: float = 72
     recheck_too_early_hours: float = 6
     recheck_evidence_missing_days: float = 7

@@ -383,7 +383,9 @@ class Pipeline:
         )
         report = await ctx.run(
             "verify",
-            lambda: verify_sentences(drafts, passages, a.nli, s.nli_entailment_threshold),
+            lambda: verify_sentences(drafts, passages, a.nli, s.nli_entailment_threshold,
+                                     claim_text=claim.text_en, status=status,
+                                     restatement_threshold=s.nli_restatement_threshold),
             inputs={"drafts": drafts}, model_version=lambda: a.nli.model_version, claim_id=cid,
         )
 
