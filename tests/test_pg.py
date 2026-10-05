@@ -13,7 +13,7 @@ from sqlalchemy.pool import NullPool
 
 from app.adapters.factory import build_adapters
 from app.adapters.mock import MockEmbedder
-from app.db.index import ChunkIn, passage_count, sync_sources, upsert_document
+from app.db.index import ChunkIn, known_urls, passage_count, sync_sources, upsert_document
 from app.db.pg_search import PgSearch
 from app.db.pg_store import PgStore
 from app.db.seed import seed_mock_corpus
@@ -97,6 +97,20 @@ async def test_upsert_document_replaces_passages(db, whitelist):
     await upsert_document(engine, t, full_text="a b", chunks=[ChunkIn("p1", "a", v), ChunkIn("p2", "b", v)], **kw)
     await upsert_document(engine, t, full_text="c", chunks=[ChunkIn("p3", "c", v)], **kw)
     assert await passage_count(engine, t) == 1
+
+
+async def test_known_urls_matches_feed_links_to_redirected_urls(db, whitelist):
+    # Stored under the URL after redirects; the feed links it with a trailing slash and www.
+    engine, t = db
+    ids = await sync_sources(engine, t, whitelist)
+    entry = whitelist.lookup("https://wire.mock.example/")
+    (v,) = await MockEmbedder(DIM).embed(["x"])
+    await upsert_document(engine, t, source_id=ids["wire.mock.example"], entry=entry, url="https://wire.mock.example/a",
+                          title="A", language="en", published_at=NOW, full_text="a", chunks=[ChunkIn("p1", "a", v)],
+                          embedding_model="mock-1")
+    feed = ["https://www.wire.mock.example/a/", "https://wire.mock.example/b/"]
+    assert await known_urls(engine, t, feed, ids["wire.mock.example"]) == {"https://www.wire.mock.example/a/"}
+    assert await known_urls(engine, t, ["https://wire.mock.example/a"]) == {"https://wire.mock.example/a"}
 
 
 async def test_hybrid_search_both_languages(seeded):

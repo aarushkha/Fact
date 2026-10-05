@@ -146,7 +146,7 @@ async def crawl_source(
     on_site = on_site[:limit]
     # reindex: re-extract and re-embed articles already stored (after a change to chunking, embedding or
     # ClaimReview handling); upsert_document replaces their passages.
-    known = set() if reindex else await known_urls(engine, tables, [c.url for c in on_site])
+    known = set() if reindex else await known_urls(engine, tables, [c.url for c in on_site], source_id)
     stats.skipped_known += len(known)
     todo = [c for c in on_site if c.url not in known]
     sem = asyncio.Semaphore(settings.crawler_concurrency)

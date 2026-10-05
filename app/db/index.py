@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.db.tables import Tables
 from app.sources import SourceEntry, Whitelist, host_of
+from app.text import url_key
 
 
 @dataclass
@@ -43,12 +44,16 @@ async def sync_sources(engine: AsyncEngine, t: Tables, whitelist: Whitelist) -> 
     return {r.domain: r.id for r in rows}
 
 
-async def known_urls(engine: AsyncEngine, t: Tables, urls: list[str]) -> set[str]:
+async def known_urls(engine: AsyncEngine, t: Tables, urls: list[str], source_id: int | None = None) -> set[str]:
+    """The given URLs that are already stored. Compared by url_key: documents are stored under the URL
+    after redirects, which can differ from the feed's link (e.g. Newschecker's trailing slash)."""
     if not urls:
         return set()
+    stmt = select(t.documents.c.url)
+    stmt = stmt.where(t.documents.c.source_id == source_id) if source_id is not None else stmt.where(t.documents.c.url.in_(urls))
     async with engine.connect() as conn:
-        rows = await conn.execute(select(t.documents.c.url).where(t.documents.c.url.in_(urls)))
-        return {r.url for r in rows}
+        stored = {url_key(r.url) for r in await conn.execute(stmt)}
+    return {u for u in urls if url_key(u) in stored}
 
 
 async def upsert_document(

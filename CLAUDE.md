@@ -115,7 +115,8 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
    reverse) is the dangerous error. It was 0 on the rows checked.
 10. **Unicode and data quirks:** `\w` splits Devanagari at vowel signs, so the token regex includes the
     block but excludes the danda. JSONB columns need `none_as_null=True`. Feed URLs carry
-    `#fragments` that create duplicates. Postgres FTS handles Devanagari with a UTF-8 locale.
+    `#fragments` that create duplicates, and may differ from the stored (post-redirect) URL by a trailing
+    slash (Newschecker), so known URLs are compared by `url_key`. Postgres FTS handles Devanagari with a UTF-8 locale.
 11. **Sources.** Most Indian government and wire feeds (PIB, PTI, ANI, DGIPR, DD) were 403 or timed out
     from the build environment, so there's almost no tier-1 coverage yet. NDTV and RBI block article
     fetches. Alt News and Factly don't embed ClaimReview (Vishvas does); their verdicts come through

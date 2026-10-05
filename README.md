@@ -138,7 +138,8 @@ python -m crawler.run --reindex                 # also re-extract and re-embed a
 
 The crawler only keeps URLs on each source's own domain (also after redirects) and obeys robots.txt.
 It extracts article text with trafilatura, splits it into sentence chunks, embeds them, and stores them
-with url, publisher, tier and published_at. Already-stored URLs are skipped unless `--reindex` is
+with url, publisher, tier and published_at. Already-stored URLs are skipped (compared without scheme,
+`www.`, query or trailing slash, since feeds may link a URL that redirects) unless `--reindex` is
 given (use it after changing chunking, embedding or ClaimReview handling). A feed that fails is logged
 and skipped; the source only fails when all of its feeds and sitemaps do. Search is hybrid: Postgres
 full-text (`simple` + `english`) plus pgvector cosine, queried in both the original language and
