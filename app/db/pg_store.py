@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import case, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.db.store import CachedVerdict, DueRecheck, StageRun, entity_keys
@@ -146,6 +146,23 @@ class PgStore:
         async with self.engine.connect() as conn:
             n24, n7, first = (await conn.execute(stmt)).one()
         return {"count_24h": n24, "count_7d": n7, "first_seen": first}
+
+    async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:
+        sr, ch, c, v = self.t.stage_runs, self.t.checks, self.t.claims, self.t.verdicts
+        async with self.engine.connect() as conn:
+            runs = (await conn.execute(
+                select(sr.c.stage, sr.c.latency_ms, sr.c.model_version, sr.c.error,
+                       case((sr.c.stage == "verify", sr.c.outputs), else_=None).label("outputs"))
+                .where(sr.c.started_at >= since).order_by(sr.c.id.desc()).limit(limit)
+            )).mappings().all()
+            checks = (await conn.execute(select(ch.c.id, ch.c.status).where(ch.c.created_at >= since))).mappings().all()
+            claims = (await conn.execute(
+                select(v.c.status, c.c.text_en, c.c.signals, v.c.rechecked_from,
+                       v.c.superseded_at.is_not(None).label("superseded"))
+                .select_from(v.join(c, c.c.id == v.c.claim_id)).where(c.c.created_at >= since)
+            )).mappings().all()
+        return {"stage_runs": [dict(r) for r in runs], "checks": [dict(r) for r in checks],
+                "claims": [dict(r) for r in claims]}
 
     async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
         c, v = self.t.claims, self.t.verdicts

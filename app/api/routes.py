@@ -94,6 +94,21 @@ async def check_stream(
     )
 
 
+@router.get("/api/monitoring", dependencies=[Depends(authenticate)])
+async def monitoring(request: Request, hours: float = 24) -> dict:
+    from app.monitoring import monitoring_report
+
+    if not 0 < hours <= 24 * 30:
+        raise HTTPException(422, "hours must be in (0, 720]")
+    p = _pipeline(request)
+    return await monitoring_report(p.store, p.clock(), hours)
+
+
+@router.get("/monitor", include_in_schema=False)
+async def monitor_page() -> FileResponse:
+    return FileResponse(ROOT_DIR / "web" / "monitor.html")
+
+
 @router.get("/api/checks/{check_id}", response_model=CheckResponse, dependencies=[Depends(authenticate)])
 async def get_check(request: Request, check_id: str) -> CheckResponse:
     found = await _pipeline(request).store.get_check(check_id)

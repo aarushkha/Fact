@@ -79,6 +79,10 @@ class Store(Protocol):
         """{count_24h, count_7d, first_seen} over earlier claims with cosine >= threshold, since `since`."""
         ...
 
+    async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:
+        """Raw rows for monitoring: {"stage_runs": [...], "checks": [...], "claims": [...]} since `since`."""
+        ...
+
     async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
         """UNVERIFIED verdicts whose recheck_at has passed, not yet superseded, claim newer than `oldest`."""
         ...
@@ -194,6 +198,27 @@ class InMemoryStore:
             "count_24h": sum(1 for t in hits if t >= now - timedelta(hours=24)),
             "count_7d": len(hits),
             "first_seen": min(hits) if hits else None,
+        }
+
+    async def recent_activity(self, since: datetime, limit: int = 50000) -> dict:
+        runs = [r for r in self.stage_runs if r.started_at >= since][-limit:]
+        check_ids = {r.check_id for r in runs}
+        return {
+            "stage_runs": [
+                {"stage": r.stage, "latency_ms": r.latency_ms, "model_version": r.model_version, "error": r.error,
+                 "outputs": r.outputs if r.stage == "verify" else None}
+                for r in runs
+            ],
+            "checks": [
+                {"id": cid, "status": "error" if self.checks.get(cid, {}).get("error") else
+                 ("done" if cid in self.responses else "running")}
+                for cid in check_ids
+            ],
+            "claims": [
+                {"status": c.claim.status.value, "text_en": c.claim.text_en, "signals": c.signals,
+                 "rechecked_from": c.rechecked_from, "superseded": c.superseded}
+                for c in self.claims if c.created_at and c.created_at >= since
+            ],
         }
 
     async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:

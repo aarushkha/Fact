@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fact monitor</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --text:#1d2330; --muted:#5d6677; --border:#d9dde4; --accent:#2f5bd3; --bad:#b42318; --warn:#a15c00;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14161b; --panel:#1c1f26; --text:#e6e8ee; --muted:#9aa3b2; --border:#2e333d; --accent:#7a9cff; --bad:#ff7b72; --warn:#e3a447; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui, sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:20px; margin:0 0 12px; } h2 { font-size:14px; margin:0 0 8px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
+  select, input, button { font:inherit; color:inherit; background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:5px 8px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
+  .tile, .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px; }
+  .tile .v { font-size:22px; font-weight:700; } .tile .k { color:var(--muted); font-size:12px; }
+  .panel { margin-bottom:14px; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; } td.n { text-align:right; font-family:var(--mono); }
+  .bad { color:var(--bad); } .warn { color:var(--warn); } .muted { color:var(--muted); }
+  #err { color:var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fact monitor</h1>
+  <div class="bar">
+    <label>Window <select id="hours"><option>1</option><option>6</option><option selected>24</option><option>168</option></select> hours</label>
+    <input id="key" type="password" placeholder="API key (if required)" autocomplete="off">
+    <button id="refresh">Refresh</button>
+    <span class="muted" id="stamp"></span> <span id="err"></span>
+  </div>
+  <div class="tiles" id="tiles"></div>
+  <div class="panel"><h2>Stages</h2><table id="stages"></table></div>
+  <div class="panel"><h2>Top rumour cascades (repeat submissions)</h2><table id="cascades"></table></div>
+  <div class="panel"><h2>Models used per stage</h2><table id="models"></table></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+try { $("key").value = localStorage.getItem("factApiKey") || ""; } catch (e) {}
+
+function tile(k, v, cls = "") { return `<div class="tile"><div class="v ${cls}">${esc(v ?? "–")}</div><div class="k">${esc(k)}</div></div>`; }
+
+async function load() {
+  $("err").textContent = "";
+  const headers = {};
+  const key = $("key").value.trim();
+  if (key) { headers["X-API-Key"] = key; try { localStorage.setItem("factApiKey", key); } catch (e) {} }
+  const res = await fetch(`/api/monitoring?hours=${$("hours").value}`, {headers});
+  if (!res.ok) { $("err").textContent = `${res.status}: ${(await res.json().catch(() => ({}))).detail || res.statusText}`; return; }
+  const d = await res.json();
+  $("stamp").textContent = `generated ${new Date(d.generated_at).toLocaleTimeString()}`;
+  const errs = Object.values(d.stages).reduce((a, s) => a + s.errors, 0);
+  $("tiles").innerHTML = [
+    tile("checks", d.checks.total),
+    tile("claims", d.claims.total),
+    tile("abstain rate", d.claims.abstain_rate),
+    tile("NLI deletion rate", d.nli.deletion_rate, d.nli.deletion_rate > 0.5 ? "warn" : ""),
+    tile("stage errors", errs, errs ? "bad" : ""),
+    tile("fallback runs", d.fallback_runs, d.fallback_runs ? "warn" : ""),
+    tile("rechecks done", d.claims.rechecks_done),
+  ].join("");
+  $("stages").innerHTML = "<tr><th>stage</th><th>runs</th><th>errors</th><th>p50 ms</th><th>p95 ms</th></tr>" +
+    Object.entries(d.stages).map(([k, s]) => `<tr><td>${esc(k)}</td><td class="n">${s.runs}</td><td class="n ${s.errors ? "bad" : ""}">${s.errors}</td><td class="n">${s.latency_ms_p50 ?? "–"}</td><td class="n">${s.latency_ms_p95 ?? "–"}</td></tr>`).join("");
+  $("cascades").innerHTML = d.top_cascades.length
+    ? "<tr><th>claim</th><th>status</th><th>24h</th><th>7d</th><th>first seen</th><th>echo only</th></tr>" +
+      d.top_cascades.map(c => `<tr><td>${esc(c.claim)}</td><td>${esc(c.status)}</td><td class="n">${c.submissions_24h}</td><td class="n">${c.submissions_7d}</td><td>${esc((c.first_seen || "").slice(0, 16))}</td><td>${c.echo_only ? "yes" : ""}</td></tr>`).join("")
+    : "<tr><td class='muted'>No repeated claims in this window.</td></tr>";
+  $("models").innerHTML = "<tr><th>stage</th><th>model</th><th>runs</th></tr>" +
+    Object.entries(d.models).flatMap(([st, m]) => Object.entries(m).map(([name, n]) => `<tr><td>${esc(st)}</td><td>${esc(name)}</td><td class="n">${n}</td></tr>`)).join("");
+}
+$("refresh").addEventListener("click", load);
+$("hours").addEventListener("change", load);
+load(); setInterval(load, 30000);
+</script>
+</body>
+</html>
