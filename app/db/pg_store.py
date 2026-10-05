@@ -96,6 +96,7 @@ class PgStore:
         recheck_at: datetime | None,
         post_date: datetime | None = None,
         signals: dict | None = None,
+        created_at: datetime | None = None,
     ) -> None:
         async with self.engine.begin() as conn:
             claim_id = (
@@ -113,6 +114,7 @@ class PgStore:
                         embedding_model=embedding_model,
                         post_date=post_date,
                         signals=_json(signals) if signals else None,
+                        **({"created_at": created_at} if created_at else {}),
                     )
                     .returning(self.t.claims.c.id)
                 )
@@ -128,6 +130,22 @@ class PgStore:
                     recheck_at=recheck_at,
                 )
             )
+
+    async def similar_claim_stats(
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+    ) -> dict:
+        from datetime import timedelta
+
+        c = self.t.claims
+        similar = (1 - c.c.embedding.cosine_distance(embedding)) >= threshold
+        stmt = select(
+            func.count().filter(c.c.created_at >= now - timedelta(hours=24)),
+            func.count(),
+            func.min(c.c.created_at),
+        ).where(c.c.embedding_model == embedding_model, c.c.created_at >= since, c.c.created_at <= now, similar)
+        async with self.engine.connect() as conn:
+            n24, n7, first = (await conn.execute(stmt)).one()
+        return {"count_24h": n24, "count_7d": n7, "first_seen": first}
 
     async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
         c, v = self.t.claims, self.t.verdicts

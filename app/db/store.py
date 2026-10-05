@@ -70,7 +70,14 @@ class Store(Protocol):
         recheck_at: datetime | None,
         post_date: datetime | None = None,
         signals: dict | None = None,
+        created_at: datetime | None = None,
     ) -> None: ...
+
+    async def similar_claim_stats(
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+    ) -> dict:
+        """{count_24h, count_7d, first_seen} over earlier claims with cosine >= threshold, since `since`."""
+        ...
 
     async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
         """UNVERIFIED verdicts whose recheck_at has passed, not yet superseded, claim newer than `oldest`."""
@@ -163,14 +170,31 @@ class InMemoryStore:
         recheck_at: datetime | None,
         post_date: datetime | None = None,
         signals: dict | None = None,
+        created_at: datetime | None = None,
     ) -> None:
         self.claims.append(
             _StoredClaim(
                 check_id, claim, embedding, embedding_model, entity_keys(entities), sources, recheck_at,
                 id=len(self.claims) + 1, claim_key=claim_key, post_date=post_date,
-                created_at=datetime.now(timezone.utc), signals=signals,
+                created_at=created_at or datetime.now(timezone.utc), signals=signals,
             )
         )
+
+    async def similar_claim_stats(
+        self, embedding: list[float], embedding_model: str, since: datetime, now: datetime, threshold: float
+    ) -> dict:
+        from datetime import timedelta
+
+        hits = [
+            r.created_at for r in self.claims
+            if r.embedding_model == embedding_model and r.created_at and since <= r.created_at <= now
+            and cosine(embedding, r.embedding) >= threshold
+        ]
+        return {
+            "count_24h": sum(1 for t in hits if t >= now - timedelta(hours=24)),
+            "count_7d": len(hits),
+            "first_seen": min(hits) if hits else None,
+        }
 
     async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
         out = []

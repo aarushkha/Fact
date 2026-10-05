@@ -29,6 +29,7 @@ from app.models.schemas import (
     Status,
 )
 from app.jsonable import to_jsonable
+from app.pipeline.cascade import cascade_signals
 from app.pipeline.context import StageContext
 from app.pipeline.extract import extract_claims
 from app.pipeline.ingest import ingest
@@ -219,6 +220,16 @@ class Pipeline:
         await ctx.run("store", lambda: self.store.finish_check(response), inputs={"claims": len(results)})
         await emit("done", response.model_dump(mode="json"))
 
+    async def _signals(self, ctx, cid, embedding, now, passages=None, judgments=None) -> dict:
+        return await ctx.run(
+            "cascade",
+            lambda: cascade_signals(
+                self.store, embedding, self.a.embedder.model_version, now, self.settings.cascade_similarity_threshold,
+                passages, judgments, self.settings.passage_relevance_threshold,
+            ),
+            claim_id=cid,
+        )
+
     async def _claim(
         self,
         ctx: StageContext,
@@ -307,7 +318,17 @@ class Pipeline:
                 "claim_id": cid, "kind": "cache", "similarity": round(cached.similarity, 4),
                 "from_check_id": cached.check_id,
             })
-            await emit("verdict", {"claim_id": cid, "claim": res, "sources": cached.sources})
+            signals = await self._signals(ctx, cid, embedding, now)
+            # Every submission is stored, so repeat submissions of a rumour can be counted.
+            await ctx.run(
+                "store",
+                lambda: self.store.save_claim(
+                    ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, cached.sources,
+                    model_versions, None, post_date=post_date, signals=signals, created_at=now,
+                ),
+                inputs={"status": res.status, "from_cache": True}, claim_id=cid,
+            )
+            await emit("verdict", {"claim_id": cid, "claim": res, "sources": cached.sources, "signals": signals})
             return res, cached.sources
 
         if excluded:  # evaluation leakage guard: drop the evidence that labels this example
@@ -321,6 +342,7 @@ class Pipeline:
             })
             status, confidence = decisive.status, s.factcheck_hit_confidence
             passages = [decisive.passage]
+            judged_passages = judged_judgments = None
             expected = [ExpectedEvidence(item="Published fact-check by a whitelisted fact-checker", found=True)]
         else:
             # Stage 5: retrieve.
@@ -348,6 +370,7 @@ class Pipeline:
                 },
             )
             status, confidence, expected = judged.status, judged.confidence, judged.expected
+            judged_passages, judged_judgments = passages, judged.judgments
             passages = [p for _, p in judged.effective]
 
         # Stage 7: write + verify. Only best-tier relevant passages are offered to the writer.
@@ -374,16 +397,17 @@ class Pipeline:
         sources = list({src.id: src for src in sources}.values())
 
         # Stage 8: store.
+        signals = await self._signals(ctx, cid, embedding, now, judged_passages, judged_judgments)
         claim_recheck = recheck_at([status], now, s.recheck_too_early_hours, s.recheck_evidence_missing_days)
         await ctx.run(
             "store",
             lambda: self.store.save_claim(
                 ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, sources,
-                model_versions, claim_recheck, post_date=post_date,
+                model_versions, claim_recheck, post_date=post_date, signals=signals, created_at=now,
             ),
             inputs={"status": status}, claim_id=cid,
         )
-        await emit("verdict", {"claim_id": cid, "claim": res, "sources": sources})
+        await emit("verdict", {"claim_id": cid, "claim": res, "sources": sources, "signals": signals})
         return res, sources
 
 
