@@ -8,7 +8,8 @@ Rows may set "exclude_urls" (evidence ignored for that row, e.g. the fact-check 
 "single_claim" (skip claim extraction). Real fact-check rows use both.
 
 Each example is scored on its FIRST claim (eval inputs are single-claim posts).
-- confident-wrong rate: wrong and not abstained (abstained = UNVERIFIED_*), over all examples
+- confident-wrong rate: wrong and not abstained (abstained = UNVERIFIED_*), over all examples that ran
+  (an example whose run failed is counted under "errors", never as a verdict)
 - direction-wrong rate: answered "holds" (CONFIRMED) when the label says "fails" (CONTRADICTED /
   MISLEADING_CONTEXT) or the reverse: the dangerous subset of confident-wrong
 - abstain rate, accuracy
@@ -32,8 +33,9 @@ import re
 import statistics
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from app.adapters.factory import build_adapters
 from app.config import ROOT_DIR, Settings, get_settings
@@ -76,8 +78,9 @@ def load_examples(path: Path, split: str) -> list[dict]:
     return rows if split == "all" else [r for r in rows if r.get("split", "tune") == split]
 
 
-def parse_post_date(value: str | None, now: datetime) -> datetime | None:
-    """ISO 8601, or relative to the run start: "-2h", "-10d", "-30m"."""
+def parse_post_date(value: str | None, now: datetime, tz: tzinfo = timezone.utc) -> datetime | None:
+    """ISO 8601, or relative to the run start: "-2h", "-10d", "-30m". Naive values (e.g. date-only) are
+    read in tz, the configured TIMEZONE, like post dates in the app."""
     if not value:
         return None
     m = re.fullmatch(r"-(\d+(?:\.\d+)?)([mhd])", value.strip())
@@ -85,7 +88,7 @@ def parse_post_date(value: str | None, now: datetime) -> datetime | None:
         unit = {"m": "minutes", "h": "hours", "d": "days"}[m.group(2)]
         return now - timedelta(**{unit: float(m.group(1))})
     dt = datetime.fromisoformat(value)
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo else dt.replace(tzinfo=tz)
 
 
 async def run_example(ex: dict, settings: Settings, adapters, whitelist, now: datetime, trace: list | None = None) -> Row:
@@ -93,7 +96,7 @@ async def run_example(ex: dict, settings: Settings, adapters, whitelist, now: da
     pipeline = Pipeline(settings, adapters, store, whitelist, clock=lambda: now)
     image = (ROOT_DIR / ex["image_path"]).read_bytes() if ex.get("image_path") else None
     inp = CheckInput(text=ex.get("input_text"), image=image, image_mime="image/png" if image else None,
-                     post_date=parse_post_date(ex.get("post_date"), now),
+                     post_date=parse_post_date(ex.get("post_date"), now, ZoneInfo(settings.timezone)),
                      exclude_urls=ex.get("exclude_urls", []), single_claim=ex.get("single_claim", False))
     t0 = time.perf_counter()
     predicted, conf, n, err = "ERROR", 0.0, 0, ""
@@ -128,8 +131,9 @@ async def run_example(ex: dict, settings: Settings, adapters, whitelist, now: da
     expected = ex["expected_status"]
     abstained = predicted in ABSTAIN
     correct = predicted == expected
+    confident_wrong = not (correct or abstained or err)  # a failed run is an error, not a wrong verdict
     return Row(ex["id"], ex.get("split", "tune"), ex.get("language", ""), expected, predicted, conf, correct,
-               abstained, (not correct) and (not abstained), n, kept, dropped, round(latency, 1), err)
+               abstained, confident_wrong, n, kept, dropped, round(latency, 1), err)
 
 
 def at_threshold(r: Row, t: float) -> tuple[bool, bool]:
@@ -140,11 +144,16 @@ def at_threshold(r: Row, t: float) -> tuple[bool, bool]:
 
 
 def summarize(rows: list[Row], threshold: float | None = None) -> dict:
+    errors = sum(bool(r.error) for r in rows)
+    rows = [r for r in rows if not r.error]  # failed runs issued no verdict: kept out of every rate
     n = len(rows) or 1
     if threshold is not None:
         flags = [at_threshold(r, threshold) for r in rows]
     else:
         flags = [(r.abstained, r.confident_wrong) for r in rows]
+    # A definitive answer the replayed threshold turns into an abstention is no longer correct
+    # (which UNVERIFIED_* it would become is not recorded, so it never counts as a correct abstention).
+    correct = [r.correct and (r.abstained or not ab) for r, (ab, _) in zip(rows, flags)]
     direction_wrong = sum(
         1 for r, (ab, _) in zip(rows, flags)
         if not ab and r.predicted in DIRECTION and r.expected in DIRECTION and DIRECTION[r.predicted] != DIRECTION[r.expected]
@@ -164,7 +173,7 @@ def summarize(rows: list[Row], threshold: float | None = None) -> dict:
     lat = sorted(r.latency_ms for r in rows)
     return {
         "n": len(rows),
-        "accuracy": round(sum(r.correct for r in rows) / n, 3),
+        "accuracy": round(sum(correct) / n, 3),
         "confident_wrong_rate": round(sum(cw for _, cw in flags) / n, 3),
         "direction_wrong_rate": round(direction_wrong / n, 3),
         "abstain_rate": round(sum(ab for ab, _ in flags) / n, 3),
@@ -173,7 +182,7 @@ def summarize(rows: list[Row], threshold: float | None = None) -> dict:
         "ece": round(ece, 3),
         "latency_ms_p50": round(statistics.median(lat), 1) if lat else None,
         "latency_ms_p95": round(lat[min(len(lat) - 1, int(0.95 * len(lat)))], 1) if lat else None,
-        "errors": sum(bool(r.error) for r in rows),
+        "errors": errors,
     }
 
 

@@ -104,6 +104,14 @@ async def main_async(n: int, seed: int, out: Path) -> None:
             rest = [r for r in pool if r not in take]
             take += rest[: quota - len(take)]
         picked += take
+    if len(picked) < n:  # a short language pool: fill its unused quota from the other languages' leftovers
+        taken = {id(r) for r in picked}
+        rest = [r for lang in LANGS for r in by_lang[lang] if id(r) not in taken]
+        rng.shuffle(rest)
+        picked += rest[: n - len(picked)]
+    if len(picked) < n:
+        available = ", ".join(f"{lang}={len(by_lang[lang])}" for lang in LANGS)
+        raise SystemExit(f"only {len(picked)} eligible rows for --n {n} ({available}); nothing written")
     picked.sort(key=lambda r: r["id"])
     out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in picked), encoding="utf-8")
     counts = defaultdict(int)

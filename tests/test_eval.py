@@ -67,3 +67,25 @@ def test_contradicted_vs_misleading_is_not_direction_wrong():
     rows = [row("CONTRADICTED", "MISLEADING_CONTEXT", 0.9)]
     s = summarize(rows)
     assert s["confident_wrong_rate"] == 1.0 and s["direction_wrong_rate"] == 0.0
+
+
+def test_date_only_post_date_uses_configured_timezone():
+    from zoneinfo import ZoneInfo
+
+    ist = ZoneInfo("Asia/Kolkata")
+    assert parse_post_date("2026-10-01", NOW, ist) == datetime(2026, 10, 1, tzinfo=ist)
+    assert parse_post_date("2026-10-01T00:00:00+00:00", NOW, ist) == datetime(2026, 10, 1, tzinfo=timezone.utc)
+
+
+def test_failed_runs_are_errors_not_wrong_verdicts():
+    failed = Row("e", "tune", "en", "CONTRADICTED", "ERROR", 0.0, False, False, False, 0, 0, 0, 5.0, "RuntimeError: down")
+    rows = [row("CONTRADICTED", "CONTRADICTED", 0.9), failed]
+    s = summarize(rows)
+    assert s["n"] == 1 and s["errors"] == 1 and s["confident_wrong_rate"] == 0.0 and s["accuracy"] == 1.0
+
+
+def test_replayed_abstention_is_not_counted_correct():
+    rows = [row("CONTRADICTED", "CONTRADICTED", 0.7), row("CONTRADICTED", "CONTRADICTED", 0.9)]
+    assert summarize(rows)["accuracy"] == 1.0
+    s = summarize(rows, 0.8)
+    assert s["abstain_rate"] == 0.5 and s["accuracy"] == 0.5
