@@ -80,3 +80,5 @@ def test_public_ipv6_literal_is_not_internal():
     with pytest.raises(ValueError):
         check_transport("http://[2606:4700:4700::1111]:8001", "t")
     check_transport("http://[::1]:8001", "t")  # loopback stays allowed
+    with pytest.raises(ValueError):
+        check_transport("ftp://models.example.com", "t")

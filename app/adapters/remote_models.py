@@ -26,8 +26,8 @@ def check_transport(base_url: str, token: str) -> None:
     """Refuse to send MODEL_SERVER_TOKEN (and claim text) in cleartext to a public host. Plain HTTP stays
     allowed to internal hosts, which keeps the documented http://models:8001 Compose setup working."""
     parts = urlparse(base_url)
-    if token and parts.scheme == "http" and not internal_host(parts.hostname or ""):
-        raise ValueError(f"MODEL_SERVER_URL {base_url} is plain HTTP to a public host: use https:// "
+    if token and parts.scheme != "https" and not (parts.scheme == "http" and internal_host(parts.hostname or "")):
+        raise ValueError(f"MODEL_SERVER_URL {base_url} must use https:// (http:// only to internal hosts) "
                          "so MODEL_SERVER_TOKEN is not sent in cleartext")
 
 
