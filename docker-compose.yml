@@ -50,6 +50,21 @@ services:
       db:
         condition: service_healthy
 
+  models:  # embedder + NLI server; enable with: docker compose --profile models up
+    profiles: ["models"]
+    build:
+      context: .
+      args:
+        INSTALL_MODELS: "true"
+    command: ["uvicorn", "app.model_server:app", "--host", "0.0.0.0", "--port", "8001"]
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8001:8001"
+    volumes:
+      - hfcache:/root/.cache/huggingface
+
 volumes:
   pgdata:
   hfcache:

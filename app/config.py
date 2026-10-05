@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     embedder_max_seq_length: int = 1024
     nli_model: str = "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
     nli_revision: str = "b5113eb38ab63efdd7f280f8c144ea8b13f978ce"  # pinned HF commit
+    # Run embedder + NLI in a separate process (app/model_server.py). Empty = load them in-process.
+    model_server_url: str = ""
+    model_server_token: str = ""
 
     google_factcheck_api_key: str = ""
     web_search_enabled: bool = False  # TODO: no paid web-search provider chosen yet

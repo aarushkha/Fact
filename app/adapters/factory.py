@@ -14,12 +14,27 @@ from app.sources import load_whitelist
 def build_embedder(settings: Settings) -> Embedder:
     if settings.mock_mode:
         return mock.MockEmbedder(settings.embedding_dim)
+    if settings.model_server_url:
+        from app.adapters.remote_models import RemoteEmbedder
+
+        return RemoteEmbedder(settings.model_server_url, settings.model_server_token,
+                              configured=settings.embedder_model, dim=settings.embedding_dim)
     from app.adapters.local_models import BGEM3Embedder
 
     return BGEM3Embedder(
         settings.embedder_model, settings.embedder_revision or None,
         max_seq_length=settings.embedder_max_seq_length, dim=settings.embedding_dim,
     )
+
+
+def build_nli(settings: Settings):
+    if settings.model_server_url:
+        from app.adapters.remote_models import RemoteNLI
+
+        return RemoteNLI(settings.model_server_url, settings.model_server_token, configured=settings.nli_model)
+    from app.adapters.local_models import MDebertaNLI
+
+    return MDebertaNLI(settings.nli_model, settings.nli_revision or None)
 
 
 def build_search(
@@ -64,8 +79,6 @@ def build_adapters(settings: Settings, engine: AsyncEngine | None = None, tables
     from app.adapters.gemini import GeminiClient, GeminiLLM, GeminiVisionReader
     from app.adapters.google_factcheck import GoogleFactCheckSearch
     from app.adapters.llm_judge import FallbackClassifier, LLMClassifier
-    from app.adapters.local_models import MDebertaNLI
-
     if settings.llm_provider != "gemini" or settings.vision_provider != "gemini":
         raise ValueError("Only the gemini provider is implemented for LLM_PROVIDER / VISION_PROVIDER.")
 
@@ -119,7 +132,7 @@ def build_adapters(settings: Settings, engine: AsyncEngine | None = None, tables
         llm=pipeline_llm,
         classifier=classifier,
         embedder=embedder,
-        nli=MDebertaNLI(settings.nli_model, settings.nli_revision or None),
+        nli=build_nli(settings),
         factcheck=GoogleFactCheckSearch(settings.google_factcheck_api_key),
         search=search,
     )
