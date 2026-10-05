@@ -13,6 +13,7 @@ from app.db.tables import build_tables
 
 config = context.config
 dim = int(config.attributes.get("embedding_dim") or get_settings().embedding_dim)
+config.attributes["embedding_dim"] = dim  # migrations read it from here (they must not import app code)
 target_metadata = build_tables(dim).metadata
 
 

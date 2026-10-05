@@ -5,12 +5,12 @@ Revises:
 Create Date: 2026-10-05 12:35:07.897304
 """
 
+import os
+
 from alembic import op
 import sqlalchemy as sa
 import pgvector.sqlalchemy
 from alembic import context
-
-from app.config import get_settings
 from sqlalchemy.dialects import postgresql
 
 revision = '0001'
@@ -20,7 +20,8 @@ depends_on = None
 
 
 def _dim() -> int:
-    return int(context.config.attributes.get("embedding_dim") or get_settings().embedding_dim)
+    # Self-contained on purpose: env.py passes the dim; never import app runtime code into a migration.
+    return int(context.config.attributes.get("embedding_dim") or os.environ.get("EMBEDDING_DIM") or 1024)
 
 
 def upgrade() -> None:

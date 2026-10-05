@@ -61,7 +61,7 @@ services:
       - path: .env
         required: false
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"  # loopback only: /embed and /nli are open unless MODEL_SERVER_TOKEN is set
     volumes:
       - hfcache:/root/.cache/huggingface
 
