@@ -83,8 +83,9 @@ database it is in-memory and per process. API keys come from the environment, so
   crawls all sources every `CRAWL_INTERVAL_MINUTES`. A new verdict links `rechecked_from`; the old one
   is marked `superseded_at`. Use `--once` for cron.
 - Rumour-cascade signals per claim: repeat submissions in 24 h / 7 d, first seen, supporting passages
-  per tier and `echo_only` (only aggregators support it). They are stored in `claims.signals` and sent
-  on the `verdict` event; they never change the status.
+  per tier, `echo_only` (only aggregators support it) and `distinct_accounts_7d` (distinct poster handles
+  read from screenshots of the same rumour; stored normalised in `claims.account_handle`). They are stored
+  in `claims.signals` and sent on the `verdict` event; they never change the status.
 - `GET /api/monitoring?hours=24` and the `/monitor` page show: checks, statuses and abstain rate,
   per-stage latency and errors, models and fallbacks, NLI deletion rate, rechecks and top cascades.
 - Optional model server: `uvicorn app.model_server:app --port 8001` (or

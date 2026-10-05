@@ -291,3 +291,16 @@ async def test_rate_limit_expires_old_hits(db):
     async with engine.connect() as conn:
         assert (await conn.execute(select(hits.c.identity))).scalars().all() == ["key:abc"]
 
+
+async def test_similar_claim_stats_counts_distinct_accounts(db):
+    engine, t = db
+    store = PgStore(engine, t)
+    (v,) = await MockEmbedder(DIM).embed(["Mumbai airport is closed for a week"])
+    await store.create_check("chk1", "screenshot", {"created_at": NOW})
+    for i, handle in enumerate(["@alpha", "Alpha", "@beta", None]):
+        await store.save_claim("chk1", f"c{i}", _result(Status.CONTRADICTED), v, "mock-1", [], [], {}, None,
+                               created_at=NOW, account_handle=handle)
+    since = NOW - timedelta(days=7)
+    assert (await store.similar_claim_stats(v, "mock-1", since, NOW, 0.9))["accounts_7d"] == 2
+    assert (await store.similar_claim_stats(v, "mock-1", since, NOW, 0.9, account_handle="@ALPHA"))["accounts_7d"] == 2
+    assert (await store.similar_claim_stats(v, "mock-1", since, NOW, 0.9, account_handle="@gamma"))["accounts_7d"] == 3

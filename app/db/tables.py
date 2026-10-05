@@ -131,6 +131,7 @@ def build_tables(dim: int) -> Tables:
         Column("embedding_model", Text, nullable=False),
         Column("signals", JSONB(none_as_null=True)),  # rumour-cascade signals at check time
         Column("post_date", tz),  # resolved post date; rechecks reuse it
+        Column("account_handle", Text),  # normalised poster handle read from a screenshot (cascade signals)
         Column("created_at", tz, server_default=func.now(), nullable=False),
         Index("ix_claims_entity_keys", "entity_keys", postgresql_using="gin"),
         Index(

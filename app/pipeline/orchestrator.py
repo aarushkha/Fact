@@ -191,7 +191,8 @@ class Pipeline:
         age = claim_age_hours(ingested.post_date, now)
         excluded = {document_key(u) for u in inp.exclude_urls}
         outcomes = await asyncio.gather(
-            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded, ingested.post_date)
+            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded, ingested.post_date,
+                          ingested.account_handle)
               for c in claims)
         )
 
@@ -221,12 +222,12 @@ class Pipeline:
         await ctx.run("store", lambda: self.store.finish_check(response), inputs={"claims": len(results)})
         await emit("done", response.model_dump(mode="json"))
 
-    async def _signals(self, ctx, cid, embedding, now, passages=None, judgments=None) -> dict:
+    async def _signals(self, ctx, cid, embedding, now, passages=None, judgments=None, account_handle=None) -> dict:
         return await ctx.run(
             "cascade",
             lambda: cascade_signals(
                 self.store, embedding, self.a.embedder.model_version, now, self.settings.cascade_similarity_threshold,
-                passages, judgments, self.settings.passage_relevance_threshold,
+                passages, judgments, self.settings.passage_relevance_threshold, account_handle,
             ),
             claim_id=cid,
         )
@@ -242,9 +243,11 @@ class Pipeline:
         emit: Emit,
         excluded: set[str] = frozenset(),
         post_date: datetime | None = None,
+        account_handle: str | None = None,
     ) -> tuple[ClaimResult, list[SourceOut]]:
         try:
-            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit, excluded, post_date)
+            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit, excluded, post_date,
+                                           account_handle)
         except Exception as exc:
             # Abstain on failure; never guess.
             log.exception("claim %s failed", claim.id)
@@ -271,6 +274,7 @@ class Pipeline:
         emit: Emit,
         excluded: set[str] = frozenset(),
         post_date: datetime | None = None,
+        account_handle: str | None = None,
     ) -> tuple[ClaimResult, list[SourceOut]]:
         a, s = self.a, self.settings
         cid = claim.id
@@ -319,13 +323,14 @@ class Pipeline:
                 "claim_id": cid, "kind": "cache", "similarity": round(cached.similarity, 4),
                 "from_check_id": cached.check_id,
             })
-            signals = await self._signals(ctx, cid, embedding, now)
+            signals = await self._signals(ctx, cid, embedding, now, account_handle=account_handle)
             # Every submission is stored, so repeat submissions of a rumour can be counted.
             await ctx.run(
                 "store",
                 lambda: self.store.save_claim(
                     ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, cached.sources,
                     model_versions, None, post_date=post_date, signals=signals, created_at=now,
+                    account_handle=account_handle,
                 ),
                 inputs={"status": res.status, "from_cache": True}, claim_id=cid,
             )
@@ -429,13 +434,14 @@ class Pipeline:
         sources = list({src.id: src for src in sources}.values())
 
         # Stage 8: store.
-        signals = await self._signals(ctx, cid, embedding, now, judged_passages, judged_judgments)
+        signals = await self._signals(ctx, cid, embedding, now, judged_passages, judged_judgments, account_handle)
         claim_recheck = recheck_at([status], now, s.recheck_too_early_hours, s.recheck_evidence_missing_days)
         await ctx.run(
             "store",
             lambda: self.store.save_claim(
                 ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, sources,
                 model_versions, claim_recheck, post_date=post_date, signals=signals, created_at=now,
+                account_handle=account_handle,
             ),
             inputs={"status": status}, claim_id=cid,
         )

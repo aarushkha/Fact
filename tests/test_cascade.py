@@ -50,3 +50,24 @@ def test_support_by_tier_ignores_weak_and_irrelevant():
     ps = [passage("a", tier=1), passage("b", tier=3), passage("c", tier=2)]
     js = [judgment("a", Stance.SUPPORTS, 0.4), judgment("b", Stance.SUPPORTS), judgment("c", Stance.IRRELEVANT)]
     assert support_by_tier(ps, js, 0.5) == {"1": 0, "2": 0, "3": 1}
+
+
+async def test_distinct_accounts_counted_from_screenshots(pipeline):
+    from app.adapters.mock import make_mock_png
+
+    async def post(handle):
+        img = make_mock_png({"post_text": "A fire broke out at a chemical factory in Thane.", "account_handle": handle,
+                             "post_date": "1h"})
+        inp = CheckInput(image=img, image_mime="image/png")
+        return [e.data["signals"] async for e in pipeline.stream(inp) if e.name == "verdict"][0]
+
+    assert (await post("@alpha"))["distinct_accounts_7d"] == 1
+    assert (await post("@Alpha "))["distinct_accounts_7d"] == 1  # same account, normalised
+    third = await post("@beta")
+    assert third["distinct_accounts_7d"] == 2 and third["similar_submissions_7d"] == 2
+    # A text submission has no handle: the count of earlier accounts still shows.
+    assert (await verdict_signals(pipeline, "A fire broke out at a chemical factory in Thane."))["distinct_accounts_7d"] == 2
+
+
+async def test_no_account_signal_without_handles(pipeline):
+    assert "distinct_accounts_7d" not in await verdict_signals(pipeline, "A fire broke out at a chemical factory in Thane.")

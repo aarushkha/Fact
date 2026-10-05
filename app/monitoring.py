@@ -63,6 +63,7 @@ def summarize_activity(data: dict, top_n: int = 10) -> dict:
             "submissions_7d": c["signals"].get("similar_submissions_7d", 0) + 1,
             "first_seen": c["signals"].get("first_seen"),
             "echo_only": c["signals"].get("echo_only"),
+            "distinct_accounts_7d": c["signals"].get("distinct_accounts_7d"),
         })
         if len(top) >= top_n:
             break
