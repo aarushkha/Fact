@@ -102,6 +102,7 @@ class PgSearch:
                 select(
                     p.c.id, p.c.text, p.c.language, d.c.url, d.c.published_at, d.c.title,
                     s.c.name.label("publisher"), s.c.tier, s.c.kind,
+                    d.c.claim_review["rating"].astext.label("rating"),
                 )
                 .select_from(base_from.join(s, s.c.id == d.c.source_id))
                 .where(p.c.id.in_(top))
@@ -121,6 +122,7 @@ class PgSearch:
                 text=by_id[pid].text,
                 title=by_id[pid].title,
                 relevance=round(fused[pid], 4),
+                rating=by_id[pid].rating,
             )
             for pid in top
             if pid in by_id

@@ -100,6 +100,21 @@ async def test_upsert_document_replaces_passages(db, whitelist):
     assert await passage_count(engine, t) == 1
 
 
+async def test_search_carries_claim_review_rating(db, whitelist):
+    engine, t = db
+    ids = await sync_sources(engine, t, whitelist)
+    entry = whitelist.lookup("https://factcheck-desk.mock.example/")
+    emb = MockEmbedder(DIM)
+    text = "The Kolhapur dam video is old and was shared out of context."
+    (v,) = await emb.embed([text])
+    await upsert_document(engine, t, source_id=ids["factcheck-desk.mock.example"], entry=entry,
+                          url="https://factcheck-desk.mock.example/dam", title="Dam", language="en", published_at=NOW,
+                          full_text=text, chunks=[ChunkIn("pfc", text, v)], embedding_model=emb.model_version,
+                          claim_review={"rating": "Misleading", "claim_reviewed": "Kolhapur dam video"})
+    (p,) = await PgSearch(engine, t, emb).search([(text, "en")], v, k=4)
+    assert p.rating == "Misleading"
+
+
 async def test_known_urls_matches_feed_links_to_redirected_urls(db, whitelist):
     # Stored under the URL after redirects; the feed links it with a trailing slash and www.
     engine, t = db
@@ -275,3 +290,4 @@ async def test_rate_limit_expires_old_hits(db):
     assert await PgRateLimiter(engine, hits, 1).check("key:abc") is None  # the old hit no longer counts
     async with engine.connect() as conn:
         assert (await conn.execute(select(hits.c.identity))).scalars().all() == ["key:abc"]
+

@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 
 from app.adapters.mock import MockLLM, make_mock_png
-from app.models.schemas import CheckInput, Status
+from app.models.schemas import CheckResponse, CheckInput, Status
 
 from .conftest import NOW
 
@@ -122,6 +122,36 @@ async def test_claim_failure_abstains(pipeline):
 async def test_fatal_failure_emits_error(pipeline):
     events = [e async for e in pipeline.stream(CheckInput(text="   "))]
     assert [e.name for e in events] == ["error"] and events[0].data["fatal"]
+
+
+class SplitFactChecks:
+    """Two whitelisted fact-checkers rate the same claim False and Misleading."""
+
+    model_version = "mock-split"
+
+    async def search(self, query, language=None):
+        from app.models.schemas import FactCheckHit
+
+        claim = "Video shows the Kolhapur dam wall breaking last night"
+        return [
+            FactCheckHit(claim_text=claim, review_url="https://factcheck-desk.mock.example/kolhapur-dam",
+                         review_title="Kolhapur dam wall breaking video is not true", textual_rating="False",
+                         publisher_site="factcheck-desk.mock.example", language="en"),
+            FactCheckHit(claim_text=claim, review_url="https://second-look.mock.example/kolhapur-dam",
+                         review_title="Kolhapur dam wall breaking video: the claim is not true as shared",
+                         textual_rating="Misleading", publisher_site="second-look.mock.example", language="en"),
+        ]
+
+
+async def test_factchecker_disagreement_returns_conservative_status_and_both_reviews(pipeline):
+    pipeline.a.factcheck = SplitFactChecks()
+    events = [e async for e in pipeline.stream(CheckInput(text="Video shows the Kolhapur dam wall breaking last night"))]
+    names = [e.name for e in events]
+    assert "cache_hit" not in names  # split reviews never short-circuit
+    verdict = next(e for e in events if e.name == "verdict").data
+    assert verdict["claim"]["status"] == "MISLEADING_CONTEXT"
+    assert {d["rating"] for d in verdict["factcheck_disagreement"]} == {"False", "Misleading"}
+    CheckResponse.model_validate(events[-1].data)  # public contract unchanged
 
 
 async def test_post_language_summary_stage_runs_and_keeps_verified_sentences(settings, adapters, store, whitelist):

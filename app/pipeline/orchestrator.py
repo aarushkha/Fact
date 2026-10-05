@@ -34,7 +34,7 @@ from app.pipeline.context import StageContext
 from app.pipeline.extract import extract_claims
 from app.pipeline.ingest import ingest
 from app.pipeline.judge import Thresholds, claim_age_hours, judge_claim, recheck_at, unverified_status, would_change_if
-from app.pipeline.match import decisive_factcheck, lookup_cache, match_factchecks
+from app.pipeline.match import decisive_factcheck, lookup_cache, map_rating, match_factchecks
 from app.pipeline.normalize import normalize
 from app.pipeline.retrieve import rank_passages, retrieve
 from app.pipeline.write import localize_summary, verify_sentences
@@ -344,8 +344,10 @@ class Pipeline:
             status, confidence = decisive.status, s.factcheck_hit_confidence
             passages = [decisive.passage]
             judged_passages = judged_judgments = None
+            disagreement = None
             expected = [ExpectedEvidence(item="Published fact-check by a whitelisted fact-checker", found=True)]
         else:
+            disagreement = None
             # Stage 5: retrieve.
             passages = await ctx.run(
                 "retrieve",
@@ -360,20 +362,35 @@ class Pipeline:
             await emit("evidence", {"claim_id": cid, "passages": [passage_brief(p) for p in passages]})
 
             # Stage 6: judge.
+            # Fact-check reviews among the evidence (Fact Check API hits and crawled ClaimReview pages).
+            review_ratings = {p.id: st for p in passages if p.rating and (st := map_rating(p.rating)) is not None}
             judged = await ctx.run(
                 "judge",
-                lambda: judge_claim(claim, passages, a.classifier, age, self.thresholds),
+                lambda: judge_claim(claim, passages, a.classifier, age, self.thresholds, review_ratings),
                 inputs={"claim": claim, "passage_ids": [p.id for p in passages], "age_hours": age},
                 model_version=lambda: a.classifier.model_version, claim_id=cid,
                 log_output=lambda r: {
                     "status": r.status, "confidence": r.confidence, "probabilities": r.probabilities,
                     "judgments": r.judgments, "expected": r.expected,
                     "effective_passage_ids": [p.id for _, p in r.effective],
+                    "factcheck_disagreement": sorted(r.disagreement),
                 },
             )
             status, confidence, expected = judged.status, judged.confidence, judged.expected
             judged_passages, judged_judgments = passages, judged.judgments
             passages = [p for _, p in judged.effective]
+            if judged.disagreement:
+                # Show the disagreeing reviews: one per rating goes first, so the writer quotes each of them.
+                firsts = {}
+                for p in passages:
+                    firsts.setdefault(review_ratings.get(p.id), p)
+                firsts.pop(None, None)
+                lead = list(firsts.values())
+                passages = lead + [p for p in passages if p not in lead]
+                disagreement = list({
+                    p.url: {"publisher": p.publisher, "rating": p.rating, "status": review_ratings[p.id], "url": p.url}
+                    for p in passages if p.id in review_ratings
+                }.values())
 
         # Stage 7: write + verify. Only best-tier relevant passages are offered to the writer.
         drafts = await ctx.run(
@@ -422,7 +439,10 @@ class Pipeline:
             ),
             inputs={"status": status}, claim_id=cid,
         )
-        await emit("verdict", {"claim_id": cid, "claim": res, "sources": sources, "signals": signals})
+        verdict_event = {"claim_id": cid, "claim": res, "sources": sources, "signals": signals}
+        if disagreement:
+            verdict_event["factcheck_disagreement"] = disagreement
+        await emit("verdict", verdict_event)
         return res, sources
 
 

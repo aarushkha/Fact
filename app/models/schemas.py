@@ -163,6 +163,7 @@ class Passage(BaseModel):
     text: str
     title: str | None = None  # article title: context for chunks cut from the middle of an article
     relevance: float = 0.0
+    rating: str | None = None  # fact-check rating when the passage comes from a review (ClaimReview / Fact Check API)
 
 
 class PassageJudgment(BaseModel):

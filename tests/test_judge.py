@@ -3,7 +3,14 @@ from datetime import timedelta
 import pytest
 
 from app.models.schemas import Stance, Status
-from app.pipeline.judge import Thresholds, claim_age_hours, decide_status, effective_judgments, recheck_at
+from app.pipeline.judge import (
+    Thresholds,
+    claim_age_hours,
+    decide_status,
+    effective_judgments,
+    recheck_at,
+    review_disagreement,
+)
 
 from .conftest import NOW
 from .helpers import judgment, passage
@@ -131,3 +138,35 @@ async def test_unrelated_debunk_cannot_contradict():
     p = passage("x", tier=2, text="Mumbai airport video is false, the viral clip is from another airport, fact-check finds.")
     r = await judge_claim(claim(), [p], OtherIncident(), 100, T)
     assert r.status == Status.UNVERIFIED_EVIDENCE_MISSING and r.effective == []
+
+
+C, M, OK = Status.CONTRADICTED, Status.MISLEADING_CONTEXT, Status.CONFIRMED
+
+
+def test_factcheckers_split_on_contradicted_vs_misleading_gives_misleading():
+    e = eff(("rev_a", 2, CON), ("rev_b", 2, CON))
+    split = review_disagreement(e, {"rev_a": C, "rev_b": M})
+    assert split == {C, M}
+    assert decide_status(probs(CONTRADICTED=0.88), e, 100, T, split) == (M, 0.88)
+    # Already the conservative status: unchanged.
+    assert decide_status(probs(MISLEADING_CONTEXT=0.85), e, 100, T, split) == (M, 0.85)
+
+
+def test_factcheckers_split_on_direction_abstains():
+    e = eff(("rev_a", 2, CON), ("rev_b", 2, SUP))
+    split = review_disagreement(e, {"rev_a": C, "rev_b": OK})
+    status, _ = decide_status(probs(CONTRADICTED=0.9), e, 100, T, split)
+    assert status == Status.UNVERIFIED_EVIDENCE_MISSING
+
+
+def test_agreeing_or_gated_reviews_are_not_a_disagreement():
+    e = eff(("rev_a", 2, CON), ("rev_b", 2, CON))
+    assert review_disagreement(e, {"rev_a": C, "rev_b": C}) == set()
+    # rev_b was rejected (irrelevant / other incident), so it is not in `effective` and cannot split.
+    assert review_disagreement(eff(("rev_a", 2, CON)), {"rev_a": C, "rev_b": M}) == set()
+
+
+def test_primary_source_outranks_factchecker_split():
+    e = eff(("police", 1, CON), ("rev_a", 2, CON), ("rev_b", 2, CON))
+    assert review_disagreement(e, {"rev_a": C, "rev_b": M}) == set()
+    assert decide_status(probs(CONTRADICTED=0.9), e, 100, T)[0] == C
