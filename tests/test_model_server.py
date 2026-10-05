@@ -56,3 +56,17 @@ def test_factory_uses_model_server_when_configured():
 
     s = Settings(_env_file=None, mock_mode=False, model_server_url="http://models:8001")
     assert isinstance(build_embedder(s), RemoteEmbedder) and isinstance(build_nli(s), RemoteNLI)
+
+
+def test_token_never_sent_in_cleartext_to_a_public_host():
+    import pytest
+
+    from app.adapters.remote_models import check_transport
+
+    for ok in ["http://models:8001", "http://localhost:8001", "http://10.0.0.7:8001", "https://models.example.com"]:
+        check_transport(ok, "t")
+    check_transport("http://models.example.com", "")  # no token: nothing secret to protect
+    with pytest.raises(ValueError, match="https"):
+        check_transport("http://models.example.com:8001", "t")
+    with pytest.raises(ValueError):
+        check_transport("http://34.1.2.3:8001", "t")

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
+from urllib.parse import urlparse
+
 import httpx
 
 from app.adapters.http import request_json
@@ -10,9 +13,30 @@ from app.models.schemas import NLIScore
 BATCH = 64  # the server's per-request limit
 
 
+def internal_host(host: str) -> bool:
+    """Single-label names (Compose service "models", "localhost") and private/loopback IPs."""
+    if "." not in host:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback
+
+
+def check_transport(base_url: str, token: str) -> None:
+    """Refuse to send MODEL_SERVER_TOKEN (and claim text) in cleartext to a public host. Plain HTTP stays
+    allowed to internal hosts, which keeps the documented http://models:8001 Compose setup working."""
+    parts = urlparse(base_url)
+    if token and parts.scheme == "http" and not internal_host(parts.hostname or ""):
+        raise ValueError(f"MODEL_SERVER_URL {base_url} is plain HTTP to a public host: use https:// "
+                         "so MODEL_SERVER_TOKEN is not sent in cleartext")
+
+
 class _Remote:
     def __init__(self, base_url: str, token: str = "", timeout: float = 120, client: httpx.AsyncClient | None = None,
                  configured: str = ""):
+        check_transport(base_url, token)
         self.base_url = base_url.rstrip("/")
         self._headers = {"X-Model-Token": token} if token else {}
         self._client = client or httpx.AsyncClient(timeout=timeout)

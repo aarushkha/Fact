@@ -88,7 +88,8 @@ and per process.
   per-stage latency and errors, models and fallbacks, NLI deletion rate, rechecks and top cascades.
 - Optional model server: `uvicorn app.model_server:app --port 8001` (or
   `docker compose --profile models up`, which publishes it on 127.0.0.1 only) with `MODEL_SERVER_URL`
-  set. The API and worker then don't load torch. Set `MODEL_SERVER_TOKEN` before exposing it further.
+  set. The API and worker then don't load torch. Set `MODEL_SERVER_TOKEN` before exposing it further;
+  with a token, a public `MODEL_SERVER_URL` must be `https://` (plain HTTP is allowed only to internal hosts).
 - Migrations: Alembic (`app/db/migrations`). The app upgrades to head on startup. After changing
   `app/db/tables.py`, run `alembic revision --autogenerate -m "..."`. CI fails on drift (`alembic check`).
 
