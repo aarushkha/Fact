@@ -2,6 +2,7 @@
 TEST_DATABASE_URL=postgresql+asyncpg://fact:fact@localhost:5432/fact_test pytest tests/test_pg.py
 """
 
+import asyncio
 import os
 from datetime import timedelta
 
@@ -247,3 +248,30 @@ async def test_known_urls_keeps_identifying_query_parameters(db, whitelist):
                           full_text="a", chunks=[ChunkIn("p1", "a", v)], embedding_model="mock-1")
     feed = ["https://wire.mock.example/show.aspx?prid=1&utm_source=rss", "https://wire.mock.example/show.aspx?prid=2"]
     assert await known_urls(engine, t, feed, ids["wire.mock.example"]) == {feed[0]}
+
+
+async def test_rate_limit_is_shared_across_workers(db):
+    from app.api.security import PgRateLimiter
+
+    engine, t = db
+    # Two limiters on one database = two API worker processes.
+    a, b = PgRateLimiter(engine, t.rate_limit_hits, 3), PgRateLimiter(engine, t.rate_limit_hits, 3)
+    results = await asyncio.gather(*(lim.check("key:abc") for lim in (a, b, a, b, a)))
+    assert sum(r is None for r in results) == 3  # concurrent checks never over-admit
+    wait = await b.check("key:abc")
+    assert wait is not None and 0 < wait <= 60
+    assert await a.check("key:other") is None
+    assert await PgRateLimiter(engine, t.rate_limit_hits, 0).check("key:abc") is None  # disabled
+
+
+async def test_rate_limit_expires_old_hits(db):
+    from app.api.security import PgRateLimiter
+
+    engine, t = db
+    hits = t.rate_limit_hits
+    async with engine.begin() as conn:
+        await conn.execute(hits.insert().values(identity="ip:gone", at=func.now() - sql("interval '2 minutes'")))
+        await conn.execute(hits.insert().values(identity="key:abc", at=func.now() - sql("interval '2 minutes'")))
+    assert await PgRateLimiter(engine, hits, 1).check("key:abc") is None  # the old hit no longer counts
+    async with engine.connect() as conn:
+        assert (await conn.execute(select(hits.c.identity))).scalars().all() == ["key:abc"]

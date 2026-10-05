@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from app.adapters.base import Adapters
 from app.adapters.factory import build_adapters
 from app.api.routes import router
-from app.api.security import SlidingWindowLimiter, parse_keys
+from app.api.security import PgRateLimiter, SlidingWindowLimiter, parse_keys
 from app.config import Settings, get_settings
 from app.db.store import InMemoryStore, Store
 from app.pipeline.orchestrator import Pipeline
@@ -64,7 +64,11 @@ def create_app(
     app = FastAPI(title="Fact", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.api_keys = parse_keys(settings.api_keys)
-    app.state.rate_limiter = SlidingWindowLimiter(settings.rate_limit_per_minute)
+    app.state.rate_limiter = (
+        PgRateLimiter(engine, tables.rate_limit_hits, settings.rate_limit_per_minute)
+        if engine is not None and tables is not None
+        else SlidingWindowLimiter(settings.rate_limit_per_minute)
+    )
     if not app.state.api_keys:
         log.warning("API_KEYS is empty: the API is open to anyone who can reach it (fine for local testing only).")
     app.state.pipeline = pipeline

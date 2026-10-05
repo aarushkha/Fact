@@ -72,8 +72,9 @@ Set both to `llm` for LLM-quality extraction and writing. The Gemini free tier a
 
 **API protection.** Set `API_KEYS` (comma-separated) to require an `X-API-Key` header on
 `/api/check*` and `/api/checks/*`; the test page shows a key field when a key is required.
-`RATE_LIMIT_PER_MINUTE` limits checks per key (or per IP when auth is off). The limiter is in-memory
-and per process.
+`RATE_LIMIT_PER_MINUTE` limits checks per key (or per IP when auth is off). With `DATABASE_URL` set the
+limiter lives in Postgres (`rate_limit_hits`), so all API workers share one budget per client; without a
+database it is in-memory and per process. API keys come from the environment, so every worker shares them.
 
 ## Background worker, rechecks, monitoring, model server
 
@@ -206,7 +207,7 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
 5. Evaluation (data is the main gap; calibrate Jev once there is enough labelled data): the real fact-check set is mostly false claims (CONFIRMED is rare in fact-checks) and
    has no TOO_EARLY / NOT_CHECKABLE rows; those come only from the 10 synthetic examples. All thresholds
    in `.env.example` are untuned defaults.
-6. Rate limiter and API keys are in-memory/env based; move to a shared store when running several workers.
+6. API keys live in `API_KEYS` (no per-key quotas, revocation means a restart). The rate limiter is shared through Postgres.
 7. LLM-written summaries are English only (extractive quotes keep the source language); consider writing them in the post's language.
 8. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
 9. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
