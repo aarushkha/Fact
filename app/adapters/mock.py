@@ -353,15 +353,22 @@ class MockSearch:
         return out[:k]
 
 
+def _png_chunk(ctype: bytes, body: bytes) -> bytes:
+    return struct.pack(">I", len(body)) + ctype + body + struct.pack(">I", zlib.crc32(ctype + body) & 0xFFFFFFFF)
+
+
+def add_png_text(png: bytes, meta: dict[str, str]) -> bytes:
+    """Insert `meta` as iTXt chunks before IEND, so the mock vision reader can 'read' a real screenshot."""
+    if not png.startswith(b"\x89PNG\r\n\x1a\n") or not png.endswith(_png_chunk(b"IEND", b"")):
+        raise ValueError("not a PNG ending in IEND")
+    text = b"".join(
+        _png_chunk(b"iTXt", k.encode("latin-1") + b"\x00\x00\x00\x00\x00" + v.encode("utf-8")) for k, v in meta.items()
+    )
+    return png[:-12] + text + png[-12:]
+
+
 def make_mock_png(meta: dict[str, str]) -> bytes:
     """Build a 1x1 PNG carrying `meta` as iTXt chunks. Used for synthetic screenshots in tests/evals."""
-
-    def chunk(ctype: bytes, body: bytes) -> bytes:
-        return struct.pack(">I", len(body)) + ctype + body + struct.pack(">I", zlib.crc32(ctype + body) & 0xFFFFFFFF)
-
     ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0)
-    idat = zlib.compress(b"\x00\xff")
-    text = b"".join(
-        chunk(b"iTXt", k.encode("latin-1") + b"\x00\x00\x00\x00\x00" + v.encode("utf-8")) for k, v in meta.items()
-    )
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + text + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+    png = b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", zlib.compress(b"\x00\xff")) + _png_chunk(b"IEND", b"")
+    return add_png_text(png, meta)
