@@ -136,10 +136,27 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
     from one domain; a feed whose language differs from its entry is written `{url, language}` in
     `sources.yaml` (checked against the feed's articles, not just its `<language>` tag: Fact
     Crescendo's Marathi feed says `en-US`).
-14. **Build environment.** No Docker daemon (compose validated with `config`, image never built). Local
-    Postgres 16 + pgvector on port 5433 can stop when the container recycles. Background jobs are capped
-    at 1 h (the 200-row eval doesn't fit; use `--ids` / `--limit`). The CPU is slow: BGE crawl ≈ a few
-    articles per minute.
+14. **Build environment.** `pytest` on PATH may be a separate uv tool that can't see the project's
+    packages: run `python -m pytest`. Postgres 16 is installed but stopped and without pgvector:
+    `apt-get install postgresql-16-pgvector`, set `port = 5433`, `pg_ctlcluster 16 main start`. Docker
+    works once `dockerd` is started by hand; Docker Hub answers 429, so pull `mirror.gcr.io/library/...`
+    and retag, and for a local build give the base image the proxy CA (`/root/.ccr/ca-bundle.crt` as
+    `PIP_CERT`) in a throwaway base image, never in the repo's Dockerfile. Background jobs are capped
+    at 2 h. The CPU is slow: BGE crawl ≈ a few articles per minute; the real eval ≈ 10 s per row.
+15. **Fact-checker disagreement rarely reaches the judge.** Of 200 real rows, only 1 had API reviews that
+    still disagreed after excluding the labelling review, and there the second review fell below the
+    0.85 claim-similarity cut, so one review short-circuited alone. On the 12 English rows the eval
+    answered definitively, the rule never fired. The C↔M errors that remain are short-circuits where
+    *another* fact-checker's rating differs from the excluded label: label noise, not a judging bug.
+16. **NOT_CHECKABLE eats real rumours.** 6 of 23 definitive answers on the real set (and 1 of 10 news
+    rows) were NOT_CHECKABLE: rumours phrased as a prediction ("X is going to be the new governor"),
+    as praise of a video ("player took an incredible catch"), or an attributed quote ("…: Jaishankar").
+    The claim-type criteria in `prompts.py` treat the surface form, not the factual core. Fix with an
+    A/B on real rows before changing them (see lesson 3).
+17. **Sarvam usage.** Every non-mock check calls Sarvam `text-lid` (and `translate` for hi/mr), so a
+    200-row eval is ~300+ Sarvam calls. The owner asked to keep Sarvam usage low: re-run English rows
+    with `TRANSLATOR_PROVIDER=llm` (script heuristics, no API call for English) and only run hi/mr rows
+    when needed.
 
 ## Conventions
 
@@ -153,20 +170,24 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
 
 ## What I'd do next (in order)
 
-1. **Build a bigger index, then re-run the full 200-row real eval** with the same-event gate (it has
-   only been re-run on the 23 problem rows). Track confident-wrong, direction-wrong, abstain and
-   citation precision per language. Use a GPU or the model server for embedding; the CPU crawl is too slow.
-2. **Add tier-1 sources from a network that can reach them** (PIB, state police, DGIPR, PTI/ANI, courts),
-   then measure how many abstentions turn into correct answers.
-3. **Grow the labelled data**: run `build_factcheck_set` regularly (it dedupes), add CONFIRMED rows from
-   real news (fact-checks are ~95% false claims), and add TOO_EARLY and NOT_CHECKABLE rows. Once there
-   are a few hundred per status, calibrate Jev per question (isotonic or temperature) and tune
-   thresholds with `--threshold-sweep`.
-4. **Handle fact-checker disagreement explicitly.** When reviews of the same claim disagree on
-   CONTRADICTED vs MISLEADING, return the more conservative status (or abstain) and show both reviews.
-   Consider a "false or misleading" display bucket for the UI.
-5. **Media claims**: perceptual hashes or reverse image search for "old video shared as new", the most
-   common real pattern.
-6. **Account-level cascade signals** (same rumour from many handles) once screenshots are stored with handles.
-7. Production hardening: shared rate limiter and keys (Redis or DB) for several workers, per-host crawl
-   rate limits, a real Docker build in CI, summaries in the post's language.
+Done on 2026-10-05: fact-checker disagreement rule (`decide_status`, ratings also from crawled
+ClaimReview), shared Postgres rate limiter, per-host crawl throttle with Crawl-delay, Docker image job in
+CI, opt-in post-language summaries (`SUMMARY_LANGUAGE=post`), `build_factcheck_set --append` (300 rows),
+`build_news_set` (CONFIRMED rows from two-outlet news), `distinct_accounts_7d` cascade signal, and a tier-1
+re-probe (still blocked; PTI needs a headless browser).
+
+1. **Fix NOT_CHECKABLE on real rumours** (lesson 16): A/B the claim-type criteria on the real rows
+   (English first, no Sarvam) and the 10 synthetic rows (opinion/satire/prediction must stay
+   NOT_CHECKABLE).
+2. **Finish the full real eval** (it stopped at 171/200 to save Sarvam calls) once the Sarvam budget allows,
+   and run the 100 new rows. Track confident-wrong, direction-wrong, abstain and citation precision per
+   language. Use a GPU or the model server for embedding; the CPU crawl is too slow.
+3. **Tier-1 sources** from a network that can reach them (PIB, DGIPR, ANI, courts), or render PTI pages
+   with the pre-installed Chromium (articles are a JavaScript app).
+4. **More labelled data**: `build_news_set` daily (it appends; re-crawl so the corroborating articles are
+   indexed), and human-labelled TOO_EARLY and NOT_CHECKABLE rows (they can't be derived automatically
+   without inventing labels). Then calibrate Jev per question and tune thresholds with `--threshold-sweep`.
+5. **Media claims**: perceptual hashes or reverse image search for "old video shared as new". Needs a
+   provider (read its docs first) or a corpus of fact-checked images; a hash of a whole screenshot will
+   not match the media inside it.
+6. A "false or misleading" display bucket in the UI; per-key quotas and revocation for API keys.
