@@ -89,3 +89,32 @@ def test_replayed_abstention_is_not_counted_correct():
     assert summarize(rows)["accuracy"] == 1.0
     s = summarize(rows, 0.8)
     assert s["abstain_rate"] == 0.5 and s["accuracy"] == 0.5
+
+
+async def test_build_factcheck_set_append_keeps_existing_rows(tmp_path, monkeypatch):
+    import json
+
+    from app.models.schemas import FactCheckHit
+    from eval import build_factcheck_set as b
+
+    def hit(i, lang, rating="False"):
+        return FactCheckHit(claim_text=f"Viral claim number {i} about a bridge in the city", textual_rating=rating,
+                            review_url=f"https://altnews.in/{i}", publisher_name="Alt News", language=lang)
+
+    hits = [hit(1, "en"), hit(2, "en"), hit(3, "hi"), hit(4, "hi", "Misleading"), hit(5, "mr"), hit(6, "en", "Unproven")]
+
+    async def fake_fetch(site, key, pages=3):
+        return [{"site": site, "hit": h} for h in hits] if site == "altnews.in" else []
+
+    monkeypatch.setattr(b, "fetch", fake_fetch)
+    monkeypatch.setattr(b, "get_settings", lambda: type("S", (), {"google_factcheck_api_key": "k"})())
+    out = tmp_path / "fc.jsonl"
+    existing = b.to_row("altnews.in", hits[0])
+    existing["notes"] = "hand-checked"  # appending must not rewrite existing rows
+    out.write_text(json.dumps(existing) + "\n")
+
+    await b.main_async(2, 7, out, append=True)
+    rows = [json.loads(line) for line in out.read_text().splitlines()]
+    assert len(rows) == 3 and len({r["id"] for r in rows}) == 3
+    assert next(r for r in rows if r["id"] == existing["id"])["notes"] == "hand-checked"
+    assert all(r["expected_status"] in ("CONTRADICTED", "MISLEADING_CONTEXT") for r in rows)  # "Unproven" is skipped

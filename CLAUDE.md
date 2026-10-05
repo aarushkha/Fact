@@ -31,7 +31,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://...  pytest     # + Postgres tests (they 
 RUN_LIVE_TESTS=1 RUN_MODEL_TESTS=1 pytest tests/test_live.py   # real APIs / models
 python -m eval.run --split all                            # synthetic set (10 rows, all six statuses)
 python -m eval.run --file eval/factchecks.jsonl --split hidden [--ids a,b] [--trace] [--threshold-sweep --target 0.05]
-python -m eval.build_factcheck_set            # rebuild the 200 real labelled rows (Fact Check API key)
+python -m eval.build_factcheck_set --append --n 100   # add 100 new real labelled rows (Fact Check API key)
 python -m crawler.run [--source d] [--limit n] [--dry-run] [--reindex]   # --reindex: re-embed stored articles
 python -m app.worker [--once] [--no-crawl]    # rechecks + scheduled crawl
 python -m app.db.migrate                      # upgrade DB to head (app does this at startup)
@@ -68,7 +68,7 @@ Pipeline (`app/pipeline/orchestrator.py` chains the stages; every stage is logge
 - `app/worker.py` + `app/pipeline/recheck.py`: rechecks UNVERIFIED claims, scheduled crawl.
 - `app/monitoring.py` (+ `web/monitor.html`), `app/api/security.py` (API keys, sliding-window rate limit),
   `app/model_server.py` (+ `adapters/remote_models.py`).
-- `eval/`: `claims.jsonl` (10 synthetic rows), `factchecks.jsonl` (200 real rows), `run.py`.
+- `eval/`: `claims.jsonl` (10 synthetic rows), `factchecks.jsonl` (300 real rows; the first 200 are the ones earlier notes refer to), `run.py`.
 
 ## Providers (all verified live on 2026-10-05)
 

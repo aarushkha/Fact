@@ -2,7 +2,7 @@
 
     python -m eval.run --split tune|hidden|all [--file eval/claims.jsonl] [--out eval/out]
     python -m eval.run --split tune --threshold-sweep --target 0.05
-    python -m eval.run --file eval/factchecks.jsonl --split hidden     # 200 real fact-checked claims
+    python -m eval.run --file eval/factchecks.jsonl --split hidden     # real fact-checked claims
 
 Rows may set "exclude_urls" (evidence ignored for that row, e.g. the fact-check that labels it) and
 "single_claim" (skip claim extraction). Real fact-check rows use both.

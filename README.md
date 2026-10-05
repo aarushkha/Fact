@@ -169,9 +169,10 @@ reported as `errors` and left out of every rate. The sweep runs once with thresh
 every threshold exactly; an answer the replay turns into an abstention no longer counts as correct.
 Date-only `post_date` values are read in `TIMEZONE`, as in the app.
 
-**Real fact-check set**: `eval/factchecks.jsonl` holds 200 real claims (en 80, hi 70, mr 50),
+**Real fact-check set**: `eval/factchecks.jsonl` holds 300 real claims (en 120, hi 105, mr 75),
 labelled by published fact-checks (Alt News, Factly, Vishvas, BOOM, The Quint, Aaj Tak, Fact
-Crescendo, Lokmat) via the Fact Check API. Rebuild it with `python -m eval.build_factcheck_set`.
+Crescendo, Lokmat) via the Fact Check API. Grow it with `python -m eval.build_factcheck_set --append --n 100`
+(keeps every existing row; without `--append` the file is rebuilt from scratch).
 - Each row excludes its own labelling review from the evidence, so the answer can't simply be looked up.
 - Without other evidence the right behaviour is to abstain, so accuracy is low by design. The number
   to watch is the **confident-wrong rate**.
