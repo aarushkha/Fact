@@ -86,3 +86,10 @@ def document_key(url: str) -> str:
     query = [(k, v) for k, v in parse_qsl(urlsplit(url.strip()).query, keep_blank_values=True)
              if not k.lower().startswith("utm_") and k.lower() not in TRACKING_PARAMS]
     return url_key(url) + (f"?{urlencode(sorted(query))}" if query else "")
+
+
+def verdict_sentence(rating: str, claim: str) -> str:
+    """One sentence that leads with the verdict. The old 'Claim reviewed: "X". Rating: False.' split into
+    pieces, and the summary writer quoted the false claim on its own (25 of 30 restated-claim summaries
+    on real fact-checks). With real mDeBERTa this form entails the claim far less (mean 0.26 vs 0.46)."""
+    return f'Fact-check verdict {rating} on the claim "{claim.strip().rstrip(".")}"'

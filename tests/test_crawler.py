@@ -90,7 +90,7 @@ def test_extract_claim_review_from_json_ld():
     r = extract_claim_review(html)
     assert r == {"claim_reviewed": "Video shows floods in Kolhapur this week", "rating": "Misleading",
                  "date_published": "2026-10-01", "claimant": "Social media users"}
-    assert claim_review_text(r).startswith('Fact-check. Claim reviewed: "Video shows')
+    assert claim_review_text(r) == 'Fact-check verdict Misleading on the claim "Video shows floods in Kolhapur this week"'
     assert extract_claim_review("<script type='application/ld+json'>not json</script>") is None
 
 
@@ -197,3 +197,14 @@ async def test_crawler_refuses_hosts_resolving_to_non_public_addresses():
             with pytest.raises(NonPublicAddress):
                 await safe_get(client, url, domains)
     assert requested == []
+
+
+def test_claim_review_list_value_and_verdict_first_text():
+    from crawler.extract import claim_review_text, extract_claim_review
+
+    node = '{"@type": "ClaimReview", "claimReviewed": ["Video shows floods.", ""], "reviewRating": {"alternateName": "False"}}'
+    r = extract_claim_review(f'<script type="application/ld+json">{node}</script>')
+    assert r["claim_reviewed"] == "Video shows floods."  # not "['Video shows floods.', '']"
+    from app.text import sentences
+    text = claim_review_text(r)
+    assert text == 'Fact-check verdict False on the claim "Video shows floods"' and len(sentences(text)) == 1

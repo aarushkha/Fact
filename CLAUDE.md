@@ -122,11 +122,16 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
     from the build environment, so there's almost no tier-1 coverage yet. NDTV and RBI block article
     fetches. Alt News and Factly don't embed ClaimReview (Vishvas does); their verdicts come through
     the Google API.
-12. **A summary can cite its passage and still be wrong.** A debunk usually opens by quoting the
-    claim ("Mumbai airport is closed for a week."). Its passage entails that sentence, so the citation
-    check kept it as the summary of a CONTRADICTED verdict. Under CONTRADICTED / MISLEADING_CONTEXT,
-    NLI now also checks sentence ⇒ claim and drops restatements. The mock NLI is word overlap plus a
-    negation check, so it can tell "is closed" from "is not closed".
+12. **A summary can cite its passage and still be wrong.** A debunk quotes the claim; its passage entails
+    that sentence, so the citation check kept the false claim as the summary of a CONTRADICTED verdict.
+    Measured on 59 real fact-check articles (real BGE-M3 + mDeBERTa, extractive writer): 20 rows (34%)
+    would have shown the false claim. Two guards in `write.py` under CONTRADICTED / MISLEADING_CONTEXT:
+    NLI sentence ⇒ claim ≥ `NLI_RESTATEMENT_THRESHOLD` (0.8: 21 drops, all true restatements; 0.5–0.8
+    also held real context, so don't lower it blindly), and a claim-label rule ("Claim:", "Claim
+    Review :", "दावा:"; 30 more, all true restatements). 25 of those 30 came from our own ClaimReview
+    passage, which split as `Claim reviewed: "X". Rating: False.`; it is now one verdict-first sentence
+    (`verdict_sentence`). Marathi summaries are mostly empty even without the guards (6 of 10 rows):
+    citation NLI rarely passes there. The mock NLI is word overlap plus a negation/"is false" check.
 13. **Feeds carry their own language.** Newschecker, Vishvas and Fact Crescendo serve several languages
     from one domain; a feed whose language differs from its entry is written `{url, language}` in
     `sources.yaml` (checked against the feed's articles, not just its `<language>` tag: Fact

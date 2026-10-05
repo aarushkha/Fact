@@ -9,6 +9,7 @@ from datetime import datetime
 
 import trafilatura
 
+from app.text import verdict_sentence
 from crawler.discover import parse_datetime
 
 MIN_CHARS = 200  # shorter extractions are usually index pages or paywalls
@@ -58,7 +59,7 @@ def extract_claim_review(html: str) -> dict | None:
                 continue
             author = item.get("author") or {}
             out = {
-                "claim_reviewed": str(node.get("claimReviewed") or "").strip(),
+                "claim_reviewed": _text(node.get("claimReviewed")),
                 "rating": str(rating.get("alternateName") or rating.get("ratingValue") or "").strip(),
                 "date_published": node.get("datePublished"),
                 "claimant": author.get("name") if isinstance(author, dict) else None,
@@ -68,5 +69,12 @@ def extract_claim_review(html: str) -> dict | None:
     return None
 
 
+def _text(value) -> str:
+    """claimReviewed is sometimes a list (seen on live pages: ['claim', '']); str() of it leaked brackets."""
+    if isinstance(value, list):
+        return " ".join(str(v).strip() for v in value if str(v).strip())
+    return str(value or "").strip()
+
+
 def claim_review_text(review: dict) -> str:
-    return f'Fact-check. Claim reviewed: "{review["claim_reviewed"]}". Rating: {review["rating"]}.'
+    return verdict_sentence(review["rating"], review["claim_reviewed"])

@@ -7,6 +7,7 @@ so the citation check alone would keep it and show the false claim as the summar
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from app.adapters.base import NLIVerifier
@@ -16,6 +17,9 @@ from app.text import overlap_ratio, sentences
 MAX_SENTENCES = 3
 MAX_WINDOWS = 4  # whole passage + the 3 windows that share most words with the sentence
 FAILS = {Status.CONTRADICTED.value, Status.MISLEADING_CONTEXT.value}
+# Debunks quote the claim under a label ("Claim:", "Claim Review :", "दावा:"). On 59 real fact-checks every
+# such sentence picked as a summary was the false claim itself, and NLI scored many below the threshold.
+CLAIM_LABEL = re.compile(r"(^|[\s\-–:])(claim(\s+review(ed)?)?|दावा)\s*:", re.IGNORECASE)
 
 
 def best_windows(passage_text: str, hypothesis: str, k: int = MAX_WINDOWS) -> list[str]:
@@ -82,6 +86,9 @@ async def verify_sentences(
         ok = entailing.get(i, [])
         if not ok:
             report.dropped.append({"sentence": drafts[i].sentence, "reason": "not entailed by cited passage"})
+            continue
+        if status_value in FAILS and CLAIM_LABEL.search(drafts[i].sentence):
+            report.dropped.append({"sentence": drafts[i].sentence, "reason": f"quotes the claim under {status_value}"})
             continue
         if i in restates:
             report.dropped.append({"sentence": drafts[i].sentence, "reason": f"restates the claim under {status_value}"})

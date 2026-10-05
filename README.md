@@ -108,8 +108,10 @@ These rules are enforced in code (`app/pipeline/judge.py`, `write.py`), not left
   evidence behind most confident errors on real data.
 - Every summary sentence must be entailed by a cited passage according to the NLI check, or it is
   deleted. Under CONTRADICTED or MISLEADING_CONTEXT, a sentence that itself entails the claim
-  (`NLI_RESTATEMENT_THRESHOLD`) is deleted too: it restates the claim, like the quote a debunk opens
-  with. If nothing survives, the claim carries a status only.
+  (`NLI_RESTATEMENT_THRESHOLD`) or is labelled as the claim ("Claim: …") is deleted too: it restates
+  the claim, like the quote a debunk opens with. If nothing survives, the claim carries a status only.
+  Fact-check passages are stored as one verdict-first sentence (`Fact-check verdict False on the claim
+  "…"`); run `python -m crawler.run --reindex` to rewrite passages crawled before this change.
 - The cache only reuses definitive verdicts. It requires cosine similarity ≥ threshold, at least one
   shared entity, and the same embedding model.
 

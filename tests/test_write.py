@@ -94,3 +94,14 @@ async def test_correction_phrased_as_is_false_is_kept_under_contradicted():
     r = await verify_sentences([d], [p], MockNLIVerifier(), 0.5, claim_text="Mumbai airport is closed for a week.",
                                status="CONTRADICTED")
     assert [s.sentence for s in r.kept] == [d.sentence]
+
+
+async def test_labelled_claim_quote_dropped_under_fails_status_only():
+    # Real debunks quote the claim under a label; NLI often scored these below the restatement threshold.
+    p = passage("p7", text="Claim: The video shows a flood in Pune last week. Fact: the video is from 2019 in Kerala.")
+    d = DraftSentence(sentence="Claim: The video shows a flood in Pune last week.", passage_ids=["p7"])
+    other = "Something unrelated entirely."
+    r = await verify_sentences([d], [p], MockNLIVerifier(), 0.5, claim_text=other, status="MISLEADING_CONTEXT")
+    assert r.kept == [] and r.dropped[0]["reason"] == "quotes the claim under MISLEADING_CONTEXT"
+    r = await verify_sentences([d], [p], MockNLIVerifier(), 0.5, claim_text=other, status="CONFIRMED")
+    assert len(r.kept) == 1
