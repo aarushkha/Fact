@@ -61,9 +61,19 @@ and runs fully offline. Try these:
 | FactCheckSearch | Google Fact Check Tools `claims:search` |
 | Web search | stub, off by default (see TODOs) |
 
-**Gemini free tier:** `gemini-3.8-flash` allows 5 requests/min and 20/day. A check uses about
-1 + (number of claims) Gemini calls, plus 1 per screenshot. The model that actually answered is
-logged per stage and returned in `model_versions`.
+**Keeping Gemini use low.** By default (`CLAIM_EXTRACTOR=sentences`, `SUMMARY_WRITER=extractive`)
+a text check makes **no Gemini calls**:
+- claims are split by sentence, with English from Sarvam;
+- summaries quote the most relevant evidence sentence verbatim, and NLI still verifies each one.
+
+Gemini is then used only to read screenshots and as a fallback (if Jev or Sarvam fails).
+Set both to `llm` for LLM-quality extraction and writing. The Gemini free tier allows
+`gemini-3.8-flash` 5 requests/min and 20/day.
+
+**API protection.** Set `API_KEYS` (comma-separated) to require an `X-API-Key` header on
+`/api/check*` and `/api/checks/*`; the test page shows a key field when a key is required.
+`RATE_LIMIT_PER_MINUTE` limits checks per key (or per IP when auth is off). The limiter is in-memory
+and per process.
 
 ## How a check works
 
@@ -123,6 +133,14 @@ The report gives the confident-wrong rate (wrong and not abstained), abstain rat
 latency. It writes a per-example CSV and a JSON summary to `eval/out/`. The sweep runs once with
 threshold 0, then replays every threshold exactly.
 
+**Real fact-check set**: `eval/factchecks.jsonl` holds 200 real claims (en 80, hi 70, mr 50),
+labelled by published fact-checks (Alt News, Factly, Vishvas, BOOM, The Quint, Aaj Tak, Fact
+Crescendo, Lokmat) via the Fact Check API. Rebuild it with `python -m eval.build_factcheck_set`.
+- Each row excludes its own labelling review from the evidence, so the answer can't simply be looked up.
+- Without other evidence the right behaviour is to abstain, so accuracy is low by design. The number
+  to watch is the **confident-wrong rate**.
+- Run it with `python -m eval.run --file eval/factchecks.jsonl --split all`.
+
 Current results:
 - **Mock mode:** 10/10 correct.
 - **Real mode on the fictional corpus:** 9/10, 0 confident-wrong, citation precision 1.0.
@@ -145,15 +163,16 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
 3. Paid web-search fallback: only a stub (`app/adapters/web_search.py`). No provider was chosen, and
    `WEB_SEARCH_ENABLED=true` fails at startup.
 4. Only Gemini is implemented for `LLM_PROVIDER` / `VISION_PROVIDER`.
-5. Real evaluation data: the 10 examples are synthetic and the hidden split has 3 rows. All thresholds
+5. Evaluation: the real fact-check set is mostly false claims (CONFIRMED is rare in fact-checks) and
+   has no TOO_EARLY / NOT_CHECKABLE rows; those come only from the 10 synthetic examples. All thresholds
    in `.env.example` are untuned defaults.
 6. Database migrations: tables are created with `create_all`; switch to Alembic once the schema settles.
-7. `recheck_at` is stored, but nothing re-runs checks yet (needs a scheduler/cron).
-8. Summaries are English only; consider writing them in the post's language.
-9. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
-10. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
+7. Rate limiter and API keys are in-memory/env based; move to a shared store when running several workers.
+8. `recheck_at` is stored, but nothing re-runs checks yet (needs a scheduler/cron).
+9. LLM-written summaries are English only (extractive quotes keep the source language); consider writing them in the post's language.
+10. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
+11. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
     language per text (mixed-language posts are flagged by a heuristic).
-11. Crawler runs on demand only (no schedule) and has no per-host rate limit beyond the concurrency limit.
-12. The API has no auth or rate limiting.
+12. Crawler runs on demand only (no schedule) and has no per-host rate limit beyond the concurrency limit.
 13. The Docker image build was not run in the development environment (no Docker daemon there); the
     compose file was validated with `docker compose config`.
