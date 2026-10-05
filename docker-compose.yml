@@ -16,7 +16,10 @@ services:
       retries: 20
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        INSTALL_MODELS: ${INSTALL_MODELS:-false}
     env_file:
       - path: .env
         required: false
@@ -24,9 +27,12 @@ services:
       DATABASE_URL: postgresql+asyncpg://fact:fact@db:5432/fact
     ports:
       - "8000:8000"
+    volumes:
+      - hfcache:/root/.cache/huggingface  # model weights survive container rebuilds
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  hfcache:

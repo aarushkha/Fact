@@ -87,7 +87,20 @@ def decide_status(
 
     if evidence_ok and p >= t.confidence and p > unverified_p:
         return status, round(p, 4)
-    return unverified_status(age_hours, t.too_early_window_hours), round(min(1.0, unverified_p), 4)
+    # Abstaining. Confidence = how sure we are that no definitive status is warranted: the judge's
+    # unverified probability, or 1 - p when the judge leaned definitive but was unsure.
+    abstain_conf = max(unverified_p, 1 - p)
+    return unverified_status(age_hours, t.too_early_window_hours), round(min(1.0, abstain_conf), 4)
+
+
+@dataclass
+class JudgeResult:
+    status: Status
+    confidence: float
+    probabilities: dict[Status, float]  # raw classifier output, logged for calibration
+    judgments: list[PassageJudgment]
+    expected: list[ExpectedEvidence]
+    effective: list[tuple[PassageJudgment, Passage]]
 
 
 async def judge_claim(
@@ -96,13 +109,18 @@ async def judge_claim(
     classifier: Classifier,
     age_hours: float | None,
     t: Thresholds,
-) -> tuple[Status, float, list[PassageJudgment], list[ExpectedEvidence], list[tuple[PassageJudgment, Passage]]]:
+) -> JudgeResult:
     judgments = list(await asyncio.gather(*(classifier.judge_passage(claim, p) for p in passages)))
     expected = await classifier.expected_evidence(claim, passages, judgments)
-    verdict = await classifier.judge_claim(claim, passages, judgments, expected, age_hours)
+    # The claim-level judge sees only passages judged relevant; irrelevant ones are noise.
+    relevant_ids = {j.passage_id for j in judgments if j.stance != Stance.IRRELEVANT}
+    relevant = [p for p in passages if p.id in relevant_ids]
+    verdict = await classifier.judge_claim(
+        claim, relevant, [j for j in judgments if j.passage_id in relevant_ids], expected, age_hours
+    )
     effective = effective_judgments(judgments, passages, t.passage_relevance)
     status, confidence = decide_status(verdict.probabilities, effective, age_hours, t)
-    return status, confidence, judgments, expected, effective
+    return JudgeResult(status, confidence, verdict.probabilities, judgments, expected, effective)
 
 
 def would_change_if(status: Status, expected: list[ExpectedEvidence]) -> str | None:

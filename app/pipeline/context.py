@@ -26,7 +26,7 @@ class StageContext:
         fn: Callable[[], Awaitable[T]],
         *,
         inputs: Any = None,
-        model_version: str | None = None,
+        model_version: str | Callable[[], str] | None = None,
         claim_id: str | None = None,
         log_output: Callable[[Any], Any] | None = None,
     ) -> T:
@@ -51,7 +51,8 @@ class StageContext:
                     inputs=to_jsonable(inputs),
                     outputs=to_jsonable(log_output(output) if log_output and output is not None else output),
                     latency_ms=latency_ms,
-                    model_version=model_version,
+                    # Resolved after the call so fallbacks (e.g. another Gemini model) are recorded.
+                    model_version=model_version() if callable(model_version) else model_version,
                     error=error,
                     started_at=started,
                 )

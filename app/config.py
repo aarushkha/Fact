@@ -32,25 +32,35 @@ class Settings(BaseSettings):
 
     # --- providers (ignored when MOCK_MODE=true) ---
     llm_provider: str = "gemini"
-    llm_model: str = "gemini-3.8-flash"  # TODO: confirm exact model id against Gemini docs (step 3)
+    llm_model: str = "gemini-3.8-flash"
+    # Tried in order when the primary model is overloaded (HTTP 429/503) or unavailable.
+    llm_fallback_models: str = "gemini-3.5-flash,gemini-3.5-flash-lite"
+    llm_thinking_level: str = "low"  # minimal | low | medium | high
     vision_provider: str = "gemini"
     vision_model: str = "gemini-3.8-flash"
     gemini_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
 
     translator_provider: str = "sarvam"  # sarvam | llm
     sarvam_api_key: str = ""
-    sarvam_translate_model: str = ""  # TODO: set from Sarvam docs (step 3)
+    sarvam_translate_model: str = "mayura:v1"
+    sarvam_base_url: str = "https://api.sarvam.ai"
 
-    classifier_provider: str = "llm"  # llm | jev | local
-    jev_api_key: str = ""
-    jev_model_version: str = ""  # pin an exact version, never "latest"
+    classifier_provider: str = "jev"  # jev (falls back to llm on errors) | llm
+    openrouter_api_key: str = ""  # Jev is called through OpenRouter's Decisions API
+    jev_model_version: str = "typesafe/jev-1.13"  # pinned; never "~typesafe/jev-latest"
+    openrouter_base_url: str = "https://openrouter.ai/api"
 
     embedder_model: str = "BAAI/bge-m3"
+    embedder_revision: str = "5617a9f61b028005a4858fdac845db406aefb181"  # pinned HF commit
     embedding_dim: int = 1024
+    embedder_max_seq_length: int = 1024
     nli_model: str = "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
+    nli_revision: str = "b5113eb38ab63efdd7f280f8c144ea8b13f978ce"  # pinned HF commit
 
     google_factcheck_api_key: str = ""
-    web_search_enabled: bool = False
+    web_search_enabled: bool = False  # TODO: no paid web-search provider chosen yet
+    http_timeout_seconds: float = 60
 
     # --- thresholds (untuned defaults; tune with eval/run.py --threshold-sweep) ---
     confidence_threshold: float = 0.6  # below this, abstain (UNVERIFIED_*)
@@ -64,7 +74,7 @@ class Settings(BaseSettings):
     recheck_too_early_hours: float = 6
     recheck_evidence_missing_days: float = 7
     retrieval_top_k: int = 8
-    search_min_vector_similarity: float = 0.4
+    search_min_vector_similarity: float = 0.5  # BGE-M3: unrelated short texts score ~0.4
     search_rrf_k: int = 60
     max_upload_mb: int = 10
 

@@ -6,8 +6,21 @@ from dataclasses import dataclass, field
 
 from app.adapters.base import NLIVerifier
 from app.models.schemas import DraftSentence, Passage, SummarySentence
+from app.text import sentences
 
 MAX_SENTENCES = 3
+
+
+def premise_windows(text: str) -> list[str]:
+    """The passage, each sentence, and each pair of adjacent sentences.
+
+    NLI cross-encoders under-score a hypothesis against a long premise (mDeBERTa gave 0.44 for a
+    near-verbatim sentence against a 2-sentence passage, 0.85 against the matching sentence), so a
+    sentence counts as entailed if any window of its cited passage entails it.
+    """
+    sents = sentences(text)
+    windows = [text, *sents, *(f"{a} {b}" for a, b in zip(sents, sents[1:]))]
+    return list(dict.fromkeys(w for w in windows if w.strip()))
 
 
 @dataclass
@@ -27,21 +40,23 @@ async def verify_sentences(
     """
     by_id = {p.id: p for p in passages}
     report = VerifyReport()
-    pairs: list[tuple[int, Passage]] = []
+    pairs: list[tuple[int, Passage, str]] = []  # (draft index, cited passage, premise window)
+    cited_any: set[int] = set()
     for i, d in enumerate(drafts[:MAX_SENTENCES]):
         cited = [by_id[pid] for pid in dict.fromkeys(d.passage_ids) if pid in by_id]
         if not d.sentence.strip() or not cited:
             report.dropped.append({"sentence": d.sentence, "reason": "no valid citation"})
             continue
-        pairs.extend((i, p) for p in cited)
-    scores = await nli.score([(p.text, drafts[i].sentence) for i, p in pairs]) if pairs else []
+        cited_any.add(i)
+        pairs.extend((i, p, w) for p in cited for w in premise_windows(p.text))
+    scores = await nli.score([(w, drafts[i].sentence) for i, _, w in pairs]) if pairs else []
 
     entailing: dict[int, list[Passage]] = {}
-    for (i, p), s in zip(pairs, scores):
-        if s.entailment >= threshold:
+    for (i, p, _), s in zip(pairs, scores):
+        if s.entailment >= threshold and p not in entailing.get(i, []):
             entailing.setdefault(i, []).append(p)
     cited_ids: dict[str, Passage] = {}
-    for i in sorted({i for i, _ in pairs}):
+    for i in sorted(cited_any):
         ok = entailing.get(i, [])
         if not ok:
             report.dropped.append({"sentence": drafts[i].sentence, "reason": "not entailed by cited passage"})

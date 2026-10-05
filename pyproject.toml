@@ -21,6 +21,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+# Self-hosted models for MOCK_MODE=false (BGE-M3 embedder, mDeBERTa NLI). ~3 GB of weights on first use.
+# For a CPU-only torch: pip install --index-url https://download.pytorch.org/whl/cpu torch  (before this)
+models = ["torch>=2.4", "sentence-transformers>=3.0", "transformers>=4.44", "sentencepiece>=0.2"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

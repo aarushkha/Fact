@@ -79,3 +79,29 @@ def test_recheck_at():
     assert recheck_at([Status.CONFIRMED, Status.UNVERIFIED_TOO_EARLY], NOW, 6, 7) == NOW + timedelta(hours=6)
     assert recheck_at([Status.UNVERIFIED_EVIDENCE_MISSING], NOW, 6, 7) == NOW + timedelta(days=7)
     assert recheck_at([Status.CONFIRMED], NOW, 6, 7) is None
+
+
+def test_abstain_confidence_reflects_split_judgement():
+    # Judge split between two definitive statuses: abstain, and say we are ~half sure.
+    status, conf = decide_status(probs(CONTRADICTED=0.45, MISLEADING_CONTEXT=0.55), eff(("a", 1, CON)), 100, T)
+    assert status == Status.UNVERIFIED_EVIDENCE_MISSING and conf == 0.45
+    status, conf = decide_status(probs(UNVERIFIED_EVIDENCE_MISSING=0.9, CONFIRMED=0.1), [], 100, T)
+    assert conf == 0.9
+
+
+async def test_claim_judge_only_sees_relevant_passages():
+    from app.adapters.mock import MockClassifier
+    from app.pipeline.judge import judge_claim
+
+    seen = {}
+
+    class Spy(MockClassifier):
+        async def judge_claim(self, claim, passages, judgments, expected, age):
+            seen["ids"] = [p.id for p in passages]
+            return await super().judge_claim(claim, passages, judgments, expected, age)
+
+    from .helpers import claim
+    rel = passage("rel", tier=1, text="Mumbai airport is closed for a week, officials confirmed.")
+    irr = passage("irr", tier=1, text="Cricket scores from Pune today.")
+    r = await judge_claim(claim(), [rel, irr], Spy(), 100, T)
+    assert seen["ids"] == ["rel"] and r.status == Status.CONFIRMED and r.probabilities

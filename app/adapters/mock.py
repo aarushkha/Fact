@@ -32,6 +32,7 @@ from app.models.schemas import (
     Status,
     VisionResult,
 )
+from app.evidence_catalog import mark_found
 from app.sources import Whitelist
 from app.text import content_words, has_devanagari, overlap_ratio, sentences, source_id_for, tokens
 
@@ -194,11 +195,7 @@ class MockLLM:
 # Classifier / judge
 # ---------------------------------------------------------------------------
 
-EXPECTED_ITEMS = (
-    ("Statement or FIR from police / the responsible authority", {"police", "court", "government"}),
-    ("Official notice from the institution involved", {"institution", "government"}),
-    ("Report by a credible news outlet or wire service", {"wire", "outlet", "factchecker"}),
-)
+MOCK_EXPECTED_KEYS = ["police", "institution", "news"]
 
 
 def _has_cue(text: str, cues: tuple[str, ...]) -> bool:
@@ -226,11 +223,7 @@ class MockClassifier:
     async def expected_evidence(
         self, claim: Claim, passages: list[Passage], judgments: list[PassageJudgment]
     ) -> list[ExpectedEvidence]:
-        by_id = {p.id: p for p in passages}
-        supporting_kinds = {
-            by_id[j.passage_id].kind for j in judgments if j.stance == Stance.SUPPORTS and j.passage_id in by_id
-        }
-        return [ExpectedEvidence(item=item, found=bool(kinds & supporting_kinds)) for item, kinds in EXPECTED_ITEMS]
+        return mark_found(MOCK_EXPECTED_KEYS, passages, judgments)
 
     async def judge_claim(
         self,

@@ -60,9 +60,11 @@ async def ingest(inp: CheckInput, vision: VisionReader, now: datetime, tz: tzinf
     user_date = ensure_aware(inp.post_date, tz) if inp.post_date else None
     if inp.image:
         read = await vision.read(inp.image, inp.image_mime)
-        text = read.post_text
+        text = read.post_text.strip()
         if inp.text and inp.text.strip():
-            text = f"{text}\n{inp.text.strip()}"
+            text = f"{text}\n{inp.text.strip()}".strip()
+        if not text:
+            raise ValueError("Could not read any post text from the screenshot; paste the text instead.")
         return Ingested(
             input_type="screenshot",
             text=text,

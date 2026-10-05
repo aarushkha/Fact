@@ -38,3 +38,33 @@ async def seed_mock_corpus(engine: AsyncEngine, t: Tables, whitelist: Whitelist,
         seeded += 1
     log.info("seeded %d mock passages", seeded)
     return seeded
+
+
+async def _main() -> None:
+    """python -m app.db.seed : load the fictional demo corpus with the configured embedder.
+
+    Lets you try MOCK_MODE=false (real models) before sources.yaml is filled in; set
+    SOURCES_FILE=app/adapters/mock_data/sources.yaml so the demo publishers are whitelisted.
+    """
+    from app.adapters.factory import build_embedder
+    from app.config import get_settings
+    from app.db.tables import build_tables, init_db, make_engine
+    from app.sources import load_whitelist_file
+
+    settings = get_settings()
+    if not settings.database_url:
+        raise SystemExit("DATABASE_URL is not set.")
+    engine, t = make_engine(settings.database_url), build_tables(settings.embedding_dim)
+    try:
+        await init_db(engine, t)
+        whitelist = load_whitelist_file(settings.effective_sources_file)
+        n = await seed_mock_corpus(engine, t, whitelist, build_embedder(settings))
+        print(f"seeded {n} demo passages")
+    finally:
+        await engine.dispose()
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(_main())

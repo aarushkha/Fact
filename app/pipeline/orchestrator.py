@@ -149,13 +149,13 @@ class Pipeline:
             "ingest",
             lambda: ingest(inp, a.vision, now, self.tz),
             inputs={"input_type": inp.input_type, "text": inp.text, "image": inp.image, "post_date": inp.post_date},
-            model_version=a.vision.model_version if inp.image else None,
+            model_version=(lambda: a.vision.model_version) if inp.image else None,
         )
         norm, translator_used = await ctx.run(
             "normalize",
             lambda: normalize(ingested.text, a.translator, a.llm),
             inputs={"text": ingested.text},
-            model_version=a.translator.model_version,
+            model_version=lambda: a.translator.model_version,
         )
         if translator_used == "llm":
             model_versions["translator"] = f"llm-fallback:{a.llm.model_version}"
@@ -163,7 +163,7 @@ class Pipeline:
             "extract",
             lambda: extract_claims(norm, a.llm, a.classifier, s.claim_type_threshold),
             inputs=norm,
-            model_version=f"llm={a.llm.model_version};classifier={a.classifier.model_version}",
+            model_version=lambda: f"llm={a.llm.model_version};classifier={a.classifier.model_version}",
         )
         await emit(
             "claims_extracted",
@@ -189,6 +189,12 @@ class Pipeline:
         outcomes = await asyncio.gather(
             *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit) for c in claims)
         )
+
+        # Record the models that actually answered (fallback models can differ from the configured ones).
+        actual = a.model_versions()
+        if translator_used == "llm":
+            actual["translator"] = model_versions["translator"]
+        model_versions.update(actual)
 
         results = [r for r, _ in outcomes]
         sources: dict[str, SourceOut] = {}
@@ -266,7 +272,7 @@ class Pipeline:
         # Stage 4: cache + fact-check match.
         (embedding,) = await ctx.run(
             "embed", lambda: a.embedder.embed([claim.text_en]), inputs={"text": claim.text_en},
-            model_version=a.embedder.model_version, claim_id=cid,
+            model_version=lambda: a.embedder.model_version, claim_id=cid,
             log_output=lambda vecs: {"vectors": len(vecs), "dim": len(vecs[0]) if vecs else 0},
         )
         cached, fc_matches = await asyncio.gather(
@@ -283,7 +289,7 @@ class Pipeline:
                     s.factcheck_similarity_threshold,
                 ),
                 inputs={"text_en": claim.text_en, "text_original": claim.text_original},
-                model_version=a.factcheck.model_version, claim_id=cid,
+                model_version=lambda: a.factcheck.model_version, claim_id=cid,
             ),
         )
         if cached is not None:
@@ -313,32 +319,38 @@ class Pipeline:
                 "retrieve",
                 lambda: retrieve(claim, languages, embedding, a.search, self.whitelist, s.retrieval_top_k, a.web_search),
                 inputs={"text_en": claim.text_en, "text_original": claim.text_original},
-                model_version=a.search.model_version, claim_id=cid,
+                model_version=lambda: a.search.model_version, claim_id=cid,
             )
             # Whitelisted fact-checks that did not short-circuit still count as evidence.
             passages = rank_passages(passages + [m.passage for m in fc_matches])
             await emit("evidence", {"claim_id": cid, "passages": [passage_brief(p) for p in passages]})
 
             # Stage 6: judge.
-            status, confidence, judgments, expected, effective = await ctx.run(
+            judged = await ctx.run(
                 "judge",
                 lambda: judge_claim(claim, passages, a.classifier, age, self.thresholds),
                 inputs={"claim": claim, "passage_ids": [p.id for p in passages], "age_hours": age},
-                model_version=a.classifier.model_version, claim_id=cid,
+                model_version=lambda: a.classifier.model_version, claim_id=cid,
+                log_output=lambda r: {
+                    "status": r.status, "confidence": r.confidence, "probabilities": r.probabilities,
+                    "judgments": r.judgments, "expected": r.expected,
+                    "effective_passage_ids": [p.id for _, p in r.effective],
+                },
             )
-            passages = [p for _, p in effective]
+            status, confidence, expected = judged.status, judged.confidence, judged.expected
+            passages = [p for _, p in judged.effective]
 
         # Stage 7: write + verify. Only best-tier relevant passages are offered to the writer.
         drafts = await ctx.run(
             "write",
             lambda: a.llm.write_summary(claim, passages, status.value) if passages else _empty(),
             inputs={"status": status, "passage_ids": [p.id for p in passages]},
-            model_version=a.llm.model_version, claim_id=cid,
+            model_version=lambda: a.llm.model_version, claim_id=cid,
         )
         report = await ctx.run(
             "verify",
             lambda: verify_sentences(drafts, passages, a.nli, s.nli_entailment_threshold),
-            inputs={"drafts": drafts}, model_version=a.nli.model_version, claim_id=cid,
+            inputs={"drafts": drafts}, model_version=lambda: a.nli.model_version, claim_id=cid,
         )
 
         res = result(
