@@ -11,6 +11,10 @@
 # Feeds not added because they could not be verified from the build environment (HTTP 403 / timeout / none):
 # PIB, Maharashtra DGIPR (mahasamvad.in), PTI, ANI, DD News, All India Radio, ECI, BOOM, NewsMeter.
 # Add them once you confirm their feed URLs from your network.
+# Re-probed 2026-10-05: PIB, ANI, mahasamvad.in, sci.gov.in still 403; DD News times out. PTI's news sitemap
+# (https://www.ptinews.com/news-sitemap.xml, from robots.txt) parses, but article pages are a JavaScript app
+# with no text in the HTML, so the crawler cannot extract them without a headless browser. Maharashtra Police's
+# robots.txt sitemap returns an HTML page; Mumbai Police's sitemap lists only static pages from 2019.
 
 sources:
   # ---- tier 1: primary ----
