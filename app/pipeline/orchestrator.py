@@ -349,7 +349,8 @@ class Pipeline:
             # Stage 5: retrieve.
             passages = await ctx.run(
                 "retrieve",
-                lambda: retrieve(claim, languages, embedding, a.search, self.whitelist, s.retrieval_top_k, a.web_search),
+                lambda: retrieve(claim, languages, embedding, a.search, self.whitelist, s.retrieval_top_k, a.web_search,
+                                 exclude=excluded),
                 inputs={"text_en": claim.text_en, "text_original": claim.text_original},
                 model_version=lambda: a.search.model_version, claim_id=cid,
             )

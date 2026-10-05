@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from app.adapters.base import Search
 from app.models.schemas import Claim, Passage
 from app.sources import Whitelist
+from app.text import document_key
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -43,12 +44,16 @@ async def retrieve(
     whitelist: Whitelist,
     k: int,
     web_search: Search | None = None,
+    exclude: set[str] | frozenset[str] = frozenset(),
 ) -> list[Passage]:
+    """Top-k whitelisted passages. `exclude` (document_key of URLs, eval-only) is applied before the
+    top-k cut, so an excluded review never takes the slot of an eligible passage."""
     queries: list[tuple[str, str | None]] = [(claim.text_en, "en")]
     if claim.text_original.strip() and claim.text_original.strip() != claim.text_en.strip():
         queries.insert(0, (claim.text_original, languages[0] if languages else None))
     found = await search.search(queries, embedding, k=k * 2)
-    passages = apply_whitelist(found, whitelist)
+    passages = [p for p in apply_whitelist(found, whitelist) if document_key(p.url) not in exclude]
     if not passages and web_search is not None:
-        passages = apply_whitelist(await web_search.search(queries, embedding, k=k * 2), whitelist)
+        passages = [p for p in apply_whitelist(await web_search.search(queries, embedding, k=k * 2), whitelist)
+                    if document_key(p.url) not in exclude]
     return rank_passages(dedupe(passages))[:k]
