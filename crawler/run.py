@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import logging
+import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
@@ -38,8 +40,31 @@ MAX_CHILD_SITEMAPS = 5
 MAX_REDIRECTS = 5
 
 
-class OffsiteRedirect(httpx.HTTPError):
+class BlockedURL(httpx.HTTPError):
+    """A URL the crawler refuses to request."""
+
+
+class OffsiteRedirect(BlockedURL):
     """A redirect (or sitemap child) pointing outside the hosts allowed for that request."""
+
+
+class NonPublicAddress(BlockedURL):
+    """A host that resolves to a private, loopback, link-local or otherwise non-public address."""
+
+
+async def non_public_address(host: str) -> str | None:
+    """A non-public address `host` resolves to, if any. A host that does not resolve returns None: the
+    request then fails on its own. Checked before every request and redirect hop; it does not pin the
+    connection to the checked address, so DNS rebinding needs network egress rules on top."""
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError):
+        return None
+    for *_, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if not ip.is_global:
+            return str(ip)
+    return None
 
 
 def on_domain(url: str, domains: set[str]) -> bool:
@@ -51,9 +76,12 @@ def on_domain(url: str, domains: set[str]) -> bool:
 
 
 async def safe_get(client: httpx.AsyncClient, url: str, domains: set[str]) -> httpx.Response:
-    """GET that follows redirects itself and only to `domains`, so a publisher's redirect (or a
-    compromised sitemap) cannot make the crawler request internal or arbitrary hosts."""
+    """GET that follows redirects itself and only to `domains`, and refuses hosts that resolve to
+    non-public addresses, so a publisher's redirect, sitemap or DNS cannot point the crawler inward."""
     for _ in range(MAX_REDIRECTS + 1):
+        host = urlparse(url).hostname or ""
+        if addr := await non_public_address(host):
+            raise NonPublicAddress(f"{host} resolves to non-public address {addr}")
         r = await client.get(url, follow_redirects=False)
         if not r.is_redirect:
             return r
@@ -190,8 +218,8 @@ async def crawl_source(
                     return
                 try:
                     r = await safe_get(client, c.url, {host_of(entry.domain)})
-                except OffsiteRedirect:
-                    stats.skipped_offsite += 1  # redirect leaves the whitelisted domain: not followed
+                except BlockedURL:
+                    stats.skipped_offsite += 1  # off-domain redirect or non-public address: not requested
                     return
                 r.raise_for_status()
                 final_url = str(r.url)

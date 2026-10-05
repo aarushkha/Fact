@@ -178,3 +178,22 @@ async def test_crawler_never_follows_redirects_or_child_sitemaps_off_domain():
         assert not any("10.0.0.5" in u for u in requested)
         r = await safe_get(client, "https://wire.mock.example/hop", {"wire.mock.example"})  # on-domain hop is fine
         assert r.status_code == 200 and str(r.url).endswith("/sitemap-1.xml")
+
+
+async def test_crawler_refuses_hosts_resolving_to_non_public_addresses():
+    import httpx
+
+    from crawler.run import NonPublicAddress, safe_get
+
+    requested = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(200)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        for url, domains in [("http://localhost/x", {"localhost"}), ("http://169.254.169.254/latest/", {"169.254.169.254"}),
+                             ("http://10.0.0.5/admin", {"10.0.0.5"})]:
+            with pytest.raises(NonPublicAddress):
+                await safe_get(client, url, domains)
+    assert requested == []
