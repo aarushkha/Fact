@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     timezone: str = "Asia/Kolkata"  # used to interpret date-only post dates
 
+    # --- storage / search ---
+    database_url: str = ""  # empty -> in-memory store (mock search only)
+    search_backend: str = "auto"  # auto | mock | postgres ; auto = postgres when DATABASE_URL is set
+
+    # --- crawler ---
+    crawler_user_agent: str = "FactCrawler/0.1 (+contact: TODO)"
+    crawler_max_articles_per_source: int = 50
+    crawler_concurrency: int = 4
+    chunk_max_words: int = 180
+
     # --- sources whitelist ---
     sources_file: Path = ROOT_DIR / "sources.yaml"
 
@@ -54,7 +64,15 @@ class Settings(BaseSettings):
     recheck_too_early_hours: float = 6
     recheck_evidence_missing_days: float = 7
     retrieval_top_k: int = 8
+    search_min_vector_similarity: float = 0.4
+    search_rrf_k: int = 60
     max_upload_mb: int = 10
+
+    @property
+    def effective_search_backend(self) -> str:
+        if self.search_backend != "auto":
+            return self.search_backend
+        return "postgres" if self.database_url else "mock"
 
     @property
     def effective_sources_file(self) -> Path:

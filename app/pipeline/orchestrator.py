@@ -28,7 +28,8 @@ from app.models.schemas import (
     SourceOut,
     Status,
 )
-from app.pipeline.context import StageContext, to_jsonable
+from app.jsonable import to_jsonable
+from app.pipeline.context import StageContext
 from app.pipeline.extract import extract_claims
 from app.pipeline.ingest import ingest
 from app.pipeline.judge import Thresholds, claim_age_hours, judge_claim, recheck_at, unverified_status, would_change_if
@@ -127,13 +128,23 @@ class Pipeline:
     # ---------------------------------------------------------------- internal
 
     async def _run(self, inp: CheckInput, emit: Emit) -> None:
-        a, s = self.a, self.settings
+        a = self.a
         now = self.clock()
         check_id = "chk_" + uuid.uuid4().hex[:16]
         ctx = StageContext(check_id, self.store)
         model_versions = {"pipeline": PIPELINE_VERSION, **a.model_versions()}
         await self.store.create_check(check_id, inp.input_type, {"post_date": inp.post_date, "created_at": now})
+        try:
+            await self._execute(inp, emit, ctx, now, model_versions)
+        except Exception as exc:
+            await self.store.fail_check(check_id, f"{type(exc).__name__}: {exc}")
+            raise
 
+    async def _execute(
+        self, inp: CheckInput, emit: Emit, ctx: StageContext, now: datetime, model_versions: dict[str, str]
+    ) -> None:
+        a, s = self.a, self.settings
+        check_id = ctx.check_id
         ingested = await ctx.run(
             "ingest",
             lambda: ingest(inp, a.vision, now, self.tz),
@@ -260,7 +271,9 @@ class Pipeline:
         )
         cached, fc_matches = await asyncio.gather(
             ctx.run(
-                "cache", lambda: lookup_cache(claim, embedding, self.store, s.cache_similarity_threshold, now),
+                "cache", lambda: lookup_cache(
+                    claim, embedding, a.embedder.model_version, self.store, s.cache_similarity_threshold, now
+                ),
                 inputs={"entities": claim.entities}, claim_id=cid,
             ),
             ctx.run(
@@ -342,7 +355,10 @@ class Pipeline:
         claim_recheck = recheck_at([status], now, s.recheck_too_early_hours, s.recheck_evidence_missing_days)
         await ctx.run(
             "store",
-            lambda: self.store.save_claim(ctx.check_id, res, embedding, claim.entities, sources, model_versions, claim_recheck),
+            lambda: self.store.save_claim(
+                ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, sources,
+                model_versions, claim_recheck,
+            ),
             inputs={"status": status}, claim_id=cid,
         )
         await emit("verdict", {"claim_id": cid, "claim": res, "sources": sources})

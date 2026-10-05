@@ -37,16 +37,21 @@ class Store(Protocol):
     async def log_stage(self, run: StageRun) -> None: ...
 
     async def find_cached(
-        self, embedding: list[float], entities: list[Entity], threshold: float, now: datetime
+        self, embedding: list[float], embedding_model: str, entities: list[Entity], threshold: float, now: datetime
     ) -> CachedVerdict | None:
-        """Best past DEFINITIVE verdict with cosine >= threshold and at least one shared entity."""
+        """Best past DEFINITIVE verdict with cosine >= threshold and at least one shared entity.
+
+        Only claims embedded by the same model are compared.
+        """
         ...
 
     async def save_claim(
         self,
         check_id: str,
+        claim_key: str,
         claim: ClaimResult,
         embedding: list[float],
+        embedding_model: str,
         entities: list[Entity],
         sources: list[SourceOut],
         model_versions: dict[str, str],
@@ -54,6 +59,8 @@ class Store(Protocol):
     ) -> None: ...
 
     async def finish_check(self, response: CheckResponse) -> None: ...
+
+    async def fail_check(self, check_id: str, error: str) -> None: ...
 
     async def get_check(self, check_id: str) -> CheckResponse | None: ...
 
@@ -74,6 +81,7 @@ class _StoredClaim:
     check_id: str
     claim: ClaimResult
     embedding: list[float]
+    embedding_model: str
     entities: set[str]
     sources: list[SourceOut]
     recheck_at: datetime | None
@@ -93,13 +101,15 @@ class InMemoryStore:
         self.stage_runs.append(run)
 
     async def find_cached(
-        self, embedding: list[float], entities: list[Entity], threshold: float, now: datetime
+        self, embedding: list[float], embedding_model: str, entities: list[Entity], threshold: float, now: datetime
     ) -> CachedVerdict | None:
         keys = entity_keys(entities)
         best: CachedVerdict | None = None
         for row in self.claims:
             if row.claim.status not in DEFINITIVE_STATUSES:
                 continue  # unverified results depend on claim age and on evidence that may appear later
+            if row.embedding_model != embedding_model:
+                continue
             if row.recheck_at is not None and row.recheck_at <= now:
                 continue  # stale: due for a recheck, do not serve
             if not keys & row.entities:
@@ -112,19 +122,24 @@ class InMemoryStore:
     async def save_claim(
         self,
         check_id: str,
+        claim_key: str,
         claim: ClaimResult,
         embedding: list[float],
+        embedding_model: str,
         entities: list[Entity],
         sources: list[SourceOut],
         model_versions: dict[str, str],
         recheck_at: datetime | None,
     ) -> None:
         self.claims.append(
-            _StoredClaim(check_id, claim, embedding, entity_keys(entities), sources, recheck_at)
+            _StoredClaim(check_id, claim, embedding, embedding_model, entity_keys(entities), sources, recheck_at)
         )
 
     async def finish_check(self, response: CheckResponse) -> None:
         self.responses[response.check_id] = response
+
+    async def fail_check(self, check_id: str, error: str) -> None:
+        self.checks.setdefault(check_id, {})["error"] = error
 
     async def get_check(self, check_id: str) -> CheckResponse | None:
         return self.responses.get(check_id)

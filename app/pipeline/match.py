@@ -116,6 +116,6 @@ def decisive_factcheck(matches: list[FactCheckMatch]) -> FactCheckMatch | None:
 
 
 async def lookup_cache(
-    claim: Claim, embedding: list[float], store: Store, threshold: float, now: datetime
+    claim: Claim, embedding: list[float], embedding_model: str, store: Store, threshold: float, now: datetime
 ) -> CachedVerdict | None:
-    return await store.find_cached(embedding, claim.entities, threshold, now)
+    return await store.find_cached(embedding, embedding_model, claim.entities, threshold, now)

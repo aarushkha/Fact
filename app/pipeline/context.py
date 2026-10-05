@@ -2,38 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import time
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, TypeVar
 
-from pydantic import BaseModel
-
 from app.db.store import StageRun, Store
+from app.jsonable import to_jsonable
 
 log = logging.getLogger("fact.pipeline")
 T = TypeVar("T")
-
-
-def to_jsonable(value: Any) -> Any:
-    """Make stage inputs/outputs loggable. Raw bytes are logged as a hash + size, never stored."""
-    if isinstance(value, BaseModel):
-        return to_jsonable(value.model_dump(mode="json"))
-    if is_dataclass(value) and not isinstance(value, type):
-        return to_jsonable({f.name: getattr(value, f.name) for f in fields(value)})
-    if isinstance(value, bytes):
-        return {"sha256": hashlib.sha256(value).hexdigest(), "bytes": len(value)}
-    if isinstance(value, dict):
-        return {str(k.value if hasattr(k, "value") else k): to_jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [to_jsonable(v) for v in value]
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if hasattr(value, "value"):  # enums
-        return value.value
-    return value
 
 
 @dataclass

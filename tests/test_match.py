@@ -46,10 +46,11 @@ async def test_cache_requires_similarity_entities_and_definitive_status():
     s = InMemoryStore()
     v = [1.0, 0.0]
     mumbai = [Entity(text="Mumbai", kind="place")]
-    await s.save_claim("chk1", _result(Status.CONTRADICTED), v, mumbai, [], {}, None)
-    await s.save_claim("chk2", _result(Status.UNVERIFIED_TOO_EARLY), v, mumbai, [], {}, None)
-    hit = await s.find_cached(v, [Entity(text="mumbai")], 0.9, NOW)
+    await s.save_claim("chk1", "c1", _result(Status.CONTRADICTED), v, "m", mumbai, [], {}, None)
+    await s.save_claim("chk2", "c1", _result(Status.UNVERIFIED_TOO_EARLY), v, "m", mumbai, [], {}, None)
+    hit = await s.find_cached(v, "m", [Entity(text="mumbai")], 0.9, NOW)
     assert hit is not None and hit.check_id == "chk1"
-    assert await s.find_cached(v, [Entity(text="Pune")], 0.9, NOW) is None  # no shared entity
-    assert await s.find_cached([0.0, 1.0], mumbai, 0.9, NOW) is None  # not similar
-    assert await s.find_cached(v, [], 0.9, NOW) is None  # no entities -> no cache
+    assert await s.find_cached(v, "m", [Entity(text="Pune")], 0.9, NOW) is None  # no shared entity
+    assert await s.find_cached([0.0, 1.0], "m", mumbai, 0.9, NOW) is None  # not similar
+    assert await s.find_cached(v, "m", [], 0.9, NOW) is None  # no entities -> no cache
+    assert await s.find_cached(v, "other-model", mumbai, 0.9, NOW) is None  # different embedder

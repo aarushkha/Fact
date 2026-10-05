@@ -21,7 +21,7 @@ class SourceEntry(BaseModel):
     todo: bool = False  # placeholder entries are never used as evidence
 
 
-def _host(url_or_domain: str) -> str:
+def host_of(url_or_domain: str) -> str:
     host = urlparse(url_or_domain).hostname if "//" in url_or_domain else url_or_domain
     host = (host or "").lower().strip(".")
     return host[4:] if host.startswith("www.") else host
@@ -30,13 +30,13 @@ def _host(url_or_domain: str) -> str:
 class Whitelist:
     def __init__(self, entries: list[SourceEntry]):
         self.entries = [e for e in entries if not e.todo]
-        self._by_domain = {_host(e.domain): e for e in self.entries}
+        self._by_domain = {host_of(e.domain): e for e in self.entries}
 
     def lookup(self, url_or_domain: str | None) -> SourceEntry | None:
         """Match a URL or bare domain to a whitelisted source (exact domain or any subdomain)."""
         if not url_or_domain:
             return None
-        host = _host(url_or_domain)
+        host = host_of(url_or_domain)
         while host:
             if host in self._by_domain:
                 return self._by_domain[host]
