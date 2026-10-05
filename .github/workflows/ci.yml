@@ -45,3 +45,26 @@ jobs:
         run: python -m eval.run --split all
       - name: Compose file is valid
         run: docker compose config --quiet
+
+  image:
+    # Builds the Docker image and runs the compose stack (app + pgvector) in mock mode: the app must start,
+    # migrate the database and answer a check.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build and start app + db (no .env: MOCK_MODE defaults to true)
+        run: docker compose up -d --build --wait db app
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 60); do curl -sf localhost:8000/api/health > /dev/null && break; sleep 2; done
+          curl -sf localhost:8000/api/health
+          curl -sf -X POST localhost:8000/api/check -F "text=Mumbai airport is closed for a week." \
+            | python3 -c "import json, sys; d = json.load(sys.stdin); s = d['claims'][0]['status']; assert s == 'CONTRADICTED', s; print(s)"
+      - name: Logs
+        if: failure()
+        run: docker compose logs app db
+      - name: Stop
+        if: always()
+        run: docker compose down -v

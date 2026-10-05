@@ -213,5 +213,5 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
 9. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
     language per text (mixed-language posts are flagged by a heuristic).
 10. Crawler politeness: at most one request per host every `CRAWLER_MIN_HOST_INTERVAL_SECONDS` (raised by a robots.txt `Crawl-delay`, capped at 60 s), within one crawler process.
-11. The Docker image build was not run in the development environment (no Docker daemon there); the
-    compose file was validated with `docker compose config`.
+11. The Docker image is built in CI: the `image` job starts app + pgvector with compose in mock mode and
+    runs one check. Model weights (`INSTALL_MODELS=true`) are not built in CI.

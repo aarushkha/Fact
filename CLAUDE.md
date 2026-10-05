@@ -39,8 +39,8 @@ alembic revision --autogenerate -m "..."      # after editing app/db/tables.py; 
 uvicorn app.model_server:app --port 8001      # optional embed/NLI service (MODEL_SERVER_URL)
 ```
 
-CI (`.github/workflows/ci.yml`) runs tests with pgvector Postgres, `alembic check`, the mock eval, and
-`docker compose config`.
+CI (`.github/workflows/ci.yml`) runs tests with pgvector Postgres, `alembic check`, the mock eval,
+`docker compose config`, and an `image` job that builds the image and smoke-tests the compose stack.
 
 ## Architecture (where things live)
 
