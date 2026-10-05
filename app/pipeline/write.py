@@ -54,7 +54,7 @@ def needs_english(d: DraftSentence, passages: list[Passage]) -> bool:
 
 
 async def to_english(drafts: list[DraftSentence], passages: list[Passage], translator: Translator) -> list[DraftSentence]:
-    """Summaries are shown in English. A draft quoting non-English evidence is translated and keeps its
+    """Normalize drafts to English before verification and optional localization. A translated draft keeps its
     original as `source_sentence` (used to pick premise windows). NLI then checks the English sentence
     against the original passage: real mDeBERTa scores Marathi→Marathi pairs near chance (a sentence
     against itself: 0.27-0.36 entailment) but a Marathi passage → English sentence well (0.68-0.85).

@@ -404,7 +404,7 @@ class Pipeline:
             inputs={"status": status, "passage_ids": [p.id for p in passages]},
             model_version=lambda: a.llm.model_version, claim_id=cid,
         )
-        if any(needs_english(d, passages) for d in drafts):  # summaries are shown in English
+        if any(needs_english(d, passages) for d in drafts):  # normalize to English before verification and optional localization
             drafts = await ctx.run(
                 "translate_summary", lambda: to_english(drafts, passages, a.translator),
                 inputs={"drafts": drafts}, model_version=lambda: a.translator.model_version, claim_id=cid,

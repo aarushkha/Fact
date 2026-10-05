@@ -147,7 +147,8 @@ Defaults keep Gemini use near zero for text checks: `CLAIM_EXTRACTOR=sentences`,
     citation check (6 of 10 Marathi rows had empty summaries). A Marathi passage → English sentence
     scored 0.68-0.85. So `write.to_english` translates a non-English quote (Sarvam) and NLI checks the
     English sentence against the *original* passage (windows picked by `source_sentence`). Summaries
-    are always shown in English; a quote whose translation fails is dropped, never shown in Marathi.
+    default to English; a quote whose translation fails is dropped. `SUMMARY_LANGUAGE=post` can then
+    localize verified English sentences, retaining the English version if the translation fails NLI.
 16. **Fact-checker disagreement rarely reaches the judge.** Of 200 real rows, only 1 had API reviews that
     still disagreed after excluding the labelling review, and there the second review fell below the
     0.85 claim-similarity cut, so one review short-circuited alone. On the 12 English rows the eval

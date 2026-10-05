@@ -113,7 +113,7 @@ These rules are enforced in code (`app/pipeline/judge.py`, `write.py`), not left
   deleted. Under CONTRADICTED or MISLEADING_CONTEXT, a sentence that itself entails the claim
   (`NLI_RESTATEMENT_THRESHOLD`) or is labelled as the claim ("Claim: …") is deleted too: it restates
   the claim, like the quote a debunk opens with. If nothing survives, the claim carries a status only.
-- Summaries are always in English. A quote from Marathi or Hindi evidence is translated, and NLI
+- Summaries default to English. A quote from Marathi or Hindi evidence is translated, and NLI
   checks the English sentence against the original passage (the NLI model can't compare Marathi with
   Marathi reliably, but handles Marathi evidence → English sentence well).
   Fact-check passages are stored as one verdict-first sentence (`Fact-check verdict False on the claim
