@@ -2,6 +2,10 @@
 
     python -m eval.run --split tune|hidden|all [--file eval/claims.jsonl] [--out eval/out]
     python -m eval.run --split tune --threshold-sweep --target 0.05
+    python -m eval.run --file eval/factchecks.jsonl --split hidden     # 200 real fact-checked claims
+
+Rows may set "exclude_urls" (evidence ignored for that row, e.g. the fact-check that labels it) and
+"single_claim" (skip claim extraction). Real fact-check rows use both.
 
 Each example is scored on its FIRST claim (eval inputs are single-claim posts).
 - confident-wrong rate: wrong and not abstained (abstained = UNVERIFIED_*), over all examples
@@ -85,7 +89,8 @@ async def run_example(ex: dict, settings: Settings, adapters, whitelist, now: da
     pipeline = Pipeline(settings, adapters, store, whitelist, clock=lambda: now)
     image = (ROOT_DIR / ex["image_path"]).read_bytes() if ex.get("image_path") else None
     inp = CheckInput(text=ex.get("input_text"), image=image, image_mime="image/png" if image else None,
-                     post_date=parse_post_date(ex.get("post_date"), now))
+                     post_date=parse_post_date(ex.get("post_date"), now),
+                     exclude_urls=ex.get("exclude_urls", []), single_claim=ex.get("single_claim", False))
     t0 = time.perf_counter()
     predicted, conf, n, err = "ERROR", 0.0, 0, ""
     try:
@@ -165,7 +170,7 @@ async def main_async(args: argparse.Namespace) -> int:
     settings = get_settings()
     if args.threshold_sweep:
         settings = settings.model_copy(update={"confidence_threshold": 0.0})
-    examples = load_examples(Path(args.file), args.split)
+    examples = load_examples(Path(args.file), args.split)[: args.limit or None]
     if not examples:
         print("No examples for split", args.split)
         return 1
@@ -228,6 +233,7 @@ def main() -> None:
     ap.add_argument("--split", choices=["tune", "hidden", "all"], default="tune")
     ap.add_argument("--file", default=str(ROOT_DIR / "eval" / "claims.jsonl"))
     ap.add_argument("--out", default=str(ROOT_DIR / "eval" / "out"))
+    ap.add_argument("--limit", type=int, help="only the first N examples of the split")
     ap.add_argument("--threshold-sweep", action="store_true")
     ap.add_argument("--target", type=float, default=0.05, help="max confident-wrong rate for the sweep")
     raise SystemExit(asyncio.run(main_async(ap.parse_args())))

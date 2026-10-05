@@ -24,6 +24,7 @@ RATING_MAP: dict[str, Status] = {
     "गलत": Status.CONTRADICTED,
     "फर्जी": Status.CONTRADICTED,
     "खोटे": Status.CONTRADICTED,
+    "चूक": Status.CONTRADICTED,
     "true": Status.CONFIRMED,
     "correct": Status.CONFIRMED,
     "accurate": Status.CONFIRMED,
@@ -33,6 +34,7 @@ RATING_MAP: dict[str, Status] = {
     "misattributed": Status.MISLEADING_CONTEXT,
     "भ्रामक": Status.MISLEADING_CONTEXT,
     "दिशाभूल करणारे": Status.MISLEADING_CONTEXT,
+    "दिशाभूल": Status.MISLEADING_CONTEXT,
 }
 
 

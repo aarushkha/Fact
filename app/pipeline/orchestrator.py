@@ -38,6 +38,7 @@ from app.pipeline.normalize import normalize
 from app.pipeline.retrieve import rank_passages, retrieve
 from app.pipeline.write import verify_sentences
 from app.sources import Whitelist
+from app.text import url_key
 
 log = logging.getLogger("fact.pipeline")
 PIPELINE_VERSION = "pipeline-0.1"
@@ -161,7 +162,7 @@ class Pipeline:
             model_versions["translator"] = f"llm-fallback:{a.llm.model_version}"
         claims = await ctx.run(
             "extract",
-            lambda: extract_claims(norm, a.llm, a.classifier, s.claim_type_threshold),
+            lambda: extract_claims(norm, a.llm, a.classifier, s.claim_type_threshold, single=inp.single_claim),
             inputs=norm,
             model_version=lambda: f"llm={a.llm.model_version};classifier={a.classifier.model_version}",
         )
@@ -186,8 +187,9 @@ class Pipeline:
         )
 
         age = claim_age_hours(ingested.post_date, now)
+        excluded = {url_key(u) for u in inp.exclude_urls}
         outcomes = await asyncio.gather(
-            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit) for c in claims)
+            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded) for c in claims)
         )
 
         # Record the models that actually answered (fallback models can differ from the configured ones).
@@ -225,9 +227,10 @@ class Pipeline:
         now: datetime,
         model_versions: dict[str, str],
         emit: Emit,
+        excluded: set[str] = frozenset(),
     ) -> tuple[ClaimResult, list[SourceOut]]:
         try:
-            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit)
+            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit, excluded)
         except Exception as exc:
             # Abstain on failure; never guess.
             log.exception("claim %s failed", claim.id)
@@ -252,6 +255,7 @@ class Pipeline:
         now: datetime,
         model_versions: dict[str, str],
         emit: Emit,
+        excluded: set[str] = frozenset(),
     ) -> tuple[ClaimResult, list[SourceOut]]:
         a, s = self.a, self.settings
         cid = claim.id
@@ -292,7 +296,7 @@ class Pipeline:
                 model_version=lambda: a.factcheck.model_version, claim_id=cid,
             ),
         )
-        if cached is not None:
+        if cached is not None and not excluded:  # a cached verdict may rest on the excluded evidence
             res = cached.claim.model_copy(
                 update={"text_original": claim.text_original, "text_en": claim.text_en, "type": claim.type}
             )
@@ -303,6 +307,8 @@ class Pipeline:
             await emit("verdict", {"claim_id": cid, "claim": res, "sources": cached.sources})
             return res, cached.sources
 
+        if excluded:  # evaluation leakage guard: drop the evidence that labels this example
+            fc_matches = [m for m in fc_matches if url_key(m.hit.review_url) not in excluded]
         decisive = decisive_factcheck(fc_matches)
         if decisive is not None and decisive.status is not None and s.factcheck_hit_confidence >= s.confidence_threshold:
             await emit("cache_hit", {
@@ -323,6 +329,7 @@ class Pipeline:
             )
             # Whitelisted fact-checks that did not short-circuit still count as evidence.
             passages = rank_passages(passages + [m.passage for m in fc_matches])
+            passages = [p for p in passages if url_key(p.url) not in excluded]
             await emit("evidence", {"claim_id": cid, "passages": [passage_brief(p) for p in passages]})
 
             # Stage 6: judge.

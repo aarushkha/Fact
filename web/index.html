@@ -80,6 +80,11 @@
         <div class="hint">Separates “too early” from “evidence missing”. Overrides any date read from the screenshot.</div>
       </div>
     </div>
+    <div id="keyRow" style="display:none;margin-top:12px">
+      <label for="apiKey">API key</label>
+      <input id="apiKey" type="password" autocomplete="off" style="width:100%;font:inherit;color:inherit;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px">
+      <div class="hint">This server requires an X-API-Key. Remembered in this browser only.</div>
+    </div>
     <button id="submit" type="submit">Check</button>
   </form>
 
@@ -112,6 +117,10 @@ let claimMeta = {};
 
 fetch("/api/health").then(r => r.json()).then(h => {
   $("mode").textContent = h.mock_mode ? "Running in MOCK_MODE." : "";
+  if (h.auth_required) {
+    $("keyRow").style.display = "block";
+    try { $("apiKey").value = localStorage.getItem("factApiKey") || ""; } catch (e) {}
+  }
   $("versions").textContent = "model versions: " + fmtVersions(h.model_versions);
 }).catch(() => {});
 
@@ -241,7 +250,13 @@ $("form").addEventListener("submit", async (e) => {
   sourcesById = {}; rawEvents = []; finalResponse = null; claimMeta = {};
   $("submit").disabled = true;
   try {
-    const res = await fetch("/api/check/stream", {method: "POST", body: fd});
+    const headers = {};
+    const key = $("apiKey").value.trim();
+    if (key) {
+      headers["X-API-Key"] = key;
+      try { localStorage.setItem("factApiKey", key); } catch (e) {}
+    }
+    const res = await fetch("/api/check/stream", {method: "POST", body: fd, headers});
     if (!res.ok) {
       const body = await res.json().catch(() => ({detail: res.statusText}));
       handle("error", {message: `${res.status}: ${JSON.stringify(body.detail)}`});

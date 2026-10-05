@@ -53,3 +53,10 @@ async def test_mock_run_over_dataset(settings, adapters, whitelist):
     for ex in load_examples(ROOT_DIR / "eval" / "claims.jsonl", "all"):
         r = await run_example(ex, settings, adapters, whitelist, NOW)
         assert r.correct, (ex["id"], r.predicted, r.error)
+
+
+def test_factcheck_set_is_real_and_guarded():
+    rows = load_examples(ROOT_DIR / "eval" / "factchecks.jsonl", "all")
+    assert len(rows) == 200 and not any(r["synthetic"] for r in rows)
+    assert all(r["exclude_urls"] == [r["review_url"]] and r["single_claim"] for r in rows)
+    assert {r["language"] for r in rows} == {"en", "hi", "mr"}

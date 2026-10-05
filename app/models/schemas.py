@@ -102,6 +102,9 @@ class CheckInput(BaseModel):
     image: bytes | None = None
     image_mime: str | None = None
     post_date: datetime | None = None  # user-supplied; overrides anything read from the image
+    # Evaluation only (not exposed by the API):
+    exclude_urls: list[str] = []  # evidence URLs to ignore, e.g. the fact-check that labels an eval row
+    single_claim: bool = False  # treat the whole text as one claim (skips claim extraction)
 
     @property
     def input_type(self) -> InputType:

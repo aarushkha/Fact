@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Tried in order when the primary model is overloaded (HTTP 429/503) or unavailable.
     llm_fallback_models: str = "gemini-3.5-flash,gemini-3.5-flash-lite"
     llm_thinking_level: str = "low"  # minimal | low | medium | high
+    # Gemini-free options (real mode): sentences | llm  and  extractive | llm
+    claim_extractor: str = "sentences"
+    summary_writer: str = "extractive"
     vision_provider: str = "gemini"
     vision_model: str = "gemini-3.8-flash"
     gemini_api_key: str = ""
@@ -77,6 +80,10 @@ class Settings(BaseSettings):
     search_min_vector_similarity: float = 0.5  # BGE-M3: unrelated short texts score ~0.4
     search_rrf_k: int = 60
     max_upload_mb: int = 10
+
+    # --- API protection ---
+    api_keys: str = ""  # comma-separated; empty = auth disabled (local development only)
+    rate_limit_per_minute: int = 10  # checks per client (API key, or IP when auth is off); 0 = off
 
     @property
     def effective_search_backend(self) -> str:

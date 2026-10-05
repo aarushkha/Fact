@@ -88,6 +88,16 @@ def build_adapters(settings: Settings, engine: AsyncEngine | None = None, tables
     else:
         raise ValueError(f"Unknown TRANSLATOR_PROVIDER={settings.translator_provider!r}")
 
+    if settings.claim_extractor not in ("llm", "sentences") or settings.summary_writer not in ("llm", "extractive"):
+        raise ValueError("CLAIM_EXTRACTOR must be llm|sentences and SUMMARY_WRITER llm|extractive")
+    from app.adapters.extractive import ExtractiveWriter, HybridLLM, SentenceExtractor
+
+    pipeline_llm = HybridLLM(
+        llm,
+        extractor=SentenceExtractor(translator) if settings.claim_extractor == "sentences" else None,
+        writer=ExtractiveWriter(embedder) if settings.summary_writer == "extractive" else None,
+    )
+
     classifier: Classifier
     if settings.classifier_provider == "jev":
         from app.adapters.jev import JevClassifier
@@ -106,7 +116,7 @@ def build_adapters(settings: Settings, engine: AsyncEngine | None = None, tables
     return Adapters(
         vision=GeminiVisionReader(gemini(settings.vision_model)),
         translator=translator,
-        llm=llm,
+        llm=pipeline_llm,
         classifier=classifier,
         embedder=embedder,
         nli=MDebertaNLI(settings.nli_model, settings.nli_revision or None),

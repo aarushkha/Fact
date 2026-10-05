@@ -43,3 +43,32 @@ def source_id_for(url: str) -> str:
 
 def has_devanagari(text: str) -> bool:
     return any("ऀ" <= ch <= "ॿ" for ch in text)
+
+
+_STOP_CAPS = {"The", "A", "An", "This", "That", "It", "In", "On", "At", "He", "She", "They", "We", "I", "But", "And"}
+
+
+def guess_entities(text_en: str):
+    """Heuristic entities for the Gemini-free path: capitalized words/phrases and 4-digit years."""
+    from app.models.schemas import Entity
+
+    found: dict[str, Entity] = {}
+    for m in re.finditer(r"\b(?:[A-Z][a-zA-Z]+)(?:\s+[A-Z][a-zA-Z]+)*\b|\b(?:19|20)\d{2}\b", text_en):
+        phrase = m.group(0)
+        words = [w for w in phrase.split() if w not in _STOP_CAPS]
+        if not words:
+            continue
+        phrase = " ".join(words)
+        kind = "date" if phrase.isdigit() else "other"
+        found.setdefault(phrase.lower(), Entity(text=phrase, kind=kind))
+    return list(found.values())[:10]
+
+
+def url_key(url: str) -> str:
+    """Comparable form of a URL: no scheme, www, fragment, query, trailing slash or AMP segment."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url.strip().lower())
+    host = parts.netloc[4:] if parts.netloc.startswith("www.") else parts.netloc
+    path = "/".join(seg for seg in parts.path.split("/") if seg and seg != "amp")
+    return f"{host}/{path}"
