@@ -87,8 +87,9 @@ class Store(Protocol):
         """UNVERIFIED verdicts whose recheck_at has passed, not yet superseded, claim newer than `oldest`."""
         ...
 
-    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> None:
-        """Mark the old verdict superseded and point the new check's verdict at it."""
+    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> bool:
+        """Point the new check's verdict at the old one and mark the old one superseded.
+        Returns False (and supersedes nothing) when the new check stored no verdict for claim_key."""
         ...
 
     async def postpone_recheck(self, verdict_id: int, until: datetime) -> None: ...
@@ -232,12 +233,15 @@ class InMemoryStore:
                                   r.claim.status.value, r.post_date, r.recheck_at))
         return sorted(out, key=lambda d: d.recheck_at)[:limit]
 
-    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> None:
-        for r in self.claims:
-            if r.id == old_verdict_id:
-                r.superseded = True
-            elif r.check_id == new_check_id and r.claim_key == claim_key:
-                r.rechecked_from = old_verdict_id
+    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> bool:
+        new = [r for r in self.claims if r.check_id == new_check_id and r.claim_key == claim_key]
+        for r in new:
+            r.rechecked_from = old_verdict_id
+        if new:
+            for r in self.claims:
+                if r.id == old_verdict_id:
+                    r.superseded = True
+        return bool(new)
 
     async def postpone_recheck(self, verdict_id: int, until: datetime) -> None:
         for r in self.claims:

@@ -38,3 +38,17 @@ async def test_failed_recheck_is_postponed(pipeline, store):
     pipeline.run = boom
     results = await run_rechecks(pipeline)
     assert "error" in results[0] and store.claims[0].recheck_at == NOW + timedelta(hours=8)
+
+
+async def test_recheck_without_a_new_verdict_keeps_the_old_one(pipeline, store):
+    await pipeline.run(CheckInput(text="A fire broke out at a chemical factory in Thane.", post_date=NOW))
+    pipeline.clock = lambda: NOW + timedelta(hours=7)
+    real_run = pipeline.run
+
+    async def opinion_only(inp):  # e.g. the recheck run classified the text NOT_CHECKABLE: nothing stored
+        return await real_run(CheckInput(text="Nashik is the most beautiful city in India.", single_claim=True))
+
+    pipeline.run = opinion_only
+    results = await run_rechecks(pipeline)
+    assert results[0]["postponed"] and results[0]["new"] == "NOT_CHECKABLE"
+    assert not store.claims[0].superseded and store.claims[0].recheck_at == NOW + timedelta(hours=8)

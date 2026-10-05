@@ -41,17 +41,24 @@ async def main_async(once: bool, crawl: bool) -> None:
     try:
         while True:
             now = time.monotonic()
+            # A failed pass is logged and waits for its next slot: one bad pass must not stop the worker.
             if now >= next_recheck:
-                results = await run_rechecks(pipeline, s.recheck_batch_size)
-                log.info("recheck pass: %d claims", len(results))
                 next_recheck = now + s.recheck_interval_minutes * 60
+                try:
+                    results = await run_rechecks(pipeline, s.recheck_batch_size)
+                    log.info("recheck pass: %d claims", len(results))
+                except Exception:
+                    log.exception("recheck pass failed")
             if crawl and not s.mock_mode and now >= next_crawl:
-                headers = {"User-Agent": s.crawler_user_agent}
-                async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=20) as client:
-                    stats = await run_crawl(s, engine=engine, tables=tables, whitelist=whitelist,
-                                            embedder=adapters.embedder, client=client)
-                log.info("crawl pass: stored=%d passages=%d failed=%d", stats.stored, stats.passages, stats.failed)
                 next_crawl = now + s.crawl_interval_minutes * 60
+                try:
+                    headers = {"User-Agent": s.crawler_user_agent}
+                    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=20) as client:
+                        stats = await run_crawl(s, engine=engine, tables=tables, whitelist=whitelist,
+                                                embedder=adapters.embedder, client=client)
+                    log.info("crawl pass: stored=%d passages=%d failed=%d", stats.stored, stats.passages, stats.failed)
+                except Exception:
+                    log.exception("crawl pass failed")
             if once:
                 return
             await asyncio.sleep(30)

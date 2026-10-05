@@ -182,12 +182,17 @@ class PgStore:
         async with self.engine.connect() as conn:
             return [DueRecheck(*row) for row in (await conn.execute(stmt)).all()]
 
-    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> None:
+    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> bool:
         c, v = self.t.claims, self.t.verdicts
         async with self.engine.begin() as conn:
-            await conn.execute(update(v).where(v.c.id == old_verdict_id).values(superseded_at=func.now()))
             new_claim_ids = select(c.c.id).where(c.c.check_id == new_check_id, c.c.claim_key == claim_key)
-            await conn.execute(update(v).where(v.c.claim_id.in_(new_claim_ids)).values(rechecked_from=old_verdict_id))
+            linked = await conn.execute(
+                update(v).where(v.c.claim_id.in_(new_claim_ids)).values(rechecked_from=old_verdict_id)
+            )
+            if not linked.rowcount:
+                return False
+            await conn.execute(update(v).where(v.c.id == old_verdict_id).values(superseded_at=func.now()))
+        return True
 
     async def postpone_recheck(self, verdict_id: int, until: datetime) -> None:
         async with self.engine.begin() as conn:
