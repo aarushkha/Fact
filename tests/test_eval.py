@@ -119,3 +119,27 @@ async def test_build_factcheck_set_append_keeps_existing_rows(tmp_path, monkeypa
     assert len(rows) == 3 and len({r["id"] for r in rows}) == 3
     assert next(r for r in rows if r["id"] == existing["id"])["notes"] == "hand-checked"
     assert all(r["expected_status"] in ("CONTRADICTED", "MISLEADING_CONTEXT") for r in rows)  # "Unproven" is skipped
+
+
+def test_news_rows_need_a_second_outlet_and_a_statement():
+    from datetime import datetime, timedelta, timezone
+
+    from eval.build_news_set import is_claim_like, pair_headlines, to_row
+
+    assert is_claim_like("Supreme Court gets 3 new judges, including its second woman Justice")
+    assert not is_claim_like("Tribal students arrested from Congress office? What cops say")
+    assert not is_claim_like("Watch: PM inaugurates the new airport at Navi Mumbai today")
+    assert not is_claim_like("Big win today")  # too short to be a claim
+
+    t = datetime(2026, 10, 5, tzinfo=timezone.utc)
+    item = lambda title, domain, hours=0: {"title": title, "url": f"https://{domain}/{title[:5]}", "domain": domain,
+                                           "publisher": domain, "language": "en", "published_at": t + timedelta(hours=hours)}
+    items = [item("A", "a.in"), item("B", "a.in"), item("C", "c.in"), item("D", "d.in", hours=100)]
+    vecs = [[1.0, 0.0], [1.0, 0.0], [0.9, 0.1], [1.0, 0.0]]
+    pairs = pair_headlines(items, vecs, 0.75, 48)
+    # Same-domain (A-B) and too-late (D) reports never corroborate; A and B are both matched by C.
+    got = {p["a"]["title"]: p["b"]["title"] for p in pairs}
+    assert got.keys() == {"A", "B", "C"} and got["A"] == got["B"] == "C" and got["C"] in {"A", "B"}
+    row = to_row(pairs[0])
+    assert row["expected_status"] == "CONFIRMED" and row["exclude_urls"] == [pairs[0]["a"]["url"]]
+    assert row["label_source"] == "news" and row["corroborated_by"] == pairs[0]["b"]["url"]
