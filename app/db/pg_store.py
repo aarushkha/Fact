@@ -8,10 +8,10 @@ from typing import Any
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.db.store import CachedVerdict, StageRun, entity_keys
+from app.db.store import CachedVerdict, DueRecheck, StageRun, entity_keys
 from app.db.tables import Tables
 from app.jsonable import to_jsonable
-from app.models.schemas import DEFINITIVE_STATUSES, CheckResponse, ClaimResult, Entity, SourceOut
+from app.models.schemas import DEFINITIVE_STATUSES, UNVERIFIED_STATUSES, CheckResponse, ClaimResult, Entity, SourceOut
 
 
 def _json(value: Any) -> Any:
@@ -64,6 +64,7 @@ class PgStore:
             .select_from(c.join(v, v.c.claim_id == c.c.id))
             .where(
                 v.c.status.in_([s.value for s in DEFINITIVE_STATUSES]),
+                v.c.superseded_at.is_(None),
                 (v.c.recheck_at.is_(None)) | (v.c.recheck_at > now),
                 c.c.embedding_model == embedding_model,
                 c.c.entity_keys.overlap(keys),
@@ -93,6 +94,8 @@ class PgStore:
         sources: list[SourceOut],
         model_versions: dict[str, str],
         recheck_at: datetime | None,
+        post_date: datetime | None = None,
+        signals: dict | None = None,
     ) -> None:
         async with self.engine.begin() as conn:
             claim_id = (
@@ -108,6 +111,8 @@ class PgStore:
                         entity_keys=sorted(entity_keys(entities)),
                         embedding=embedding,
                         embedding_model=embedding_model,
+                        post_date=post_date,
+                        signals=_json(signals) if signals else None,
                     )
                     .returning(self.t.claims.c.id)
                 )
@@ -123,6 +128,35 @@ class PgStore:
                     recheck_at=recheck_at,
                 )
             )
+
+    async def due_rechecks(self, now: datetime, oldest: datetime, limit: int) -> list[DueRecheck]:
+        c, v = self.t.claims, self.t.verdicts
+        stmt = (
+            select(v.c.id, c.c.check_id, c.c.claim_key, c.c.text_original, c.c.text_en, v.c.status, c.c.post_date,
+                   v.c.recheck_at)
+            .select_from(v.join(c, c.c.id == v.c.claim_id))
+            .where(
+                v.c.status.in_([s.value for s in UNVERIFIED_STATUSES]),
+                v.c.superseded_at.is_(None),
+                v.c.recheck_at <= now,
+                func.coalesce(c.c.post_date, c.c.created_at) >= oldest,
+            )
+            .order_by(v.c.recheck_at)
+            .limit(limit)
+        )
+        async with self.engine.connect() as conn:
+            return [DueRecheck(*row) for row in (await conn.execute(stmt)).all()]
+
+    async def link_recheck(self, old_verdict_id: int, new_check_id: str, claim_key: str) -> None:
+        c, v = self.t.claims, self.t.verdicts
+        async with self.engine.begin() as conn:
+            await conn.execute(update(v).where(v.c.id == old_verdict_id).values(superseded_at=func.now()))
+            new_claim_ids = select(c.c.id).where(c.c.check_id == new_check_id, c.c.claim_key == claim_key)
+            await conn.execute(update(v).where(v.c.claim_id.in_(new_claim_ids)).values(rechecked_from=old_verdict_id))
+
+    async def postpone_recheck(self, verdict_id: int, until: datetime) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(update(self.t.verdicts).where(self.t.verdicts.c.id == verdict_id).values(recheck_at=until))
 
     async def finish_check(self, response: CheckResponse) -> None:
         async with self.engine.begin() as conn:

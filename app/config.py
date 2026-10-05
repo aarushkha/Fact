@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     too_early_window_hours: float = 72
     recheck_too_early_hours: float = 6
     recheck_evidence_missing_days: float = 7
+    recheck_max_age_days: float = 30  # stop rechecking claims older than this
+    recheck_interval_minutes: float = 15  # worker: how often to look for due rechecks
+    recheck_batch_size: int = 20
+    crawl_interval_minutes: float = 60  # worker: how often to crawl all sources
     retrieval_top_k: int = 8
     search_min_vector_similarity: float = 0.5  # BGE-M3: unrelated short texts score ~0.4
     search_rrf_k: int = 60

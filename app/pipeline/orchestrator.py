@@ -189,7 +189,8 @@ class Pipeline:
         age = claim_age_hours(ingested.post_date, now)
         excluded = {url_key(u) for u in inp.exclude_urls}
         outcomes = await asyncio.gather(
-            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded) for c in claims)
+            *(self._claim(ctx, c, norm.languages, age, now, model_versions, emit, excluded, ingested.post_date)
+              for c in claims)
         )
 
         # Record the models that actually answered (fallback models can differ from the configured ones).
@@ -228,9 +229,10 @@ class Pipeline:
         model_versions: dict[str, str],
         emit: Emit,
         excluded: set[str] = frozenset(),
+        post_date: datetime | None = None,
     ) -> tuple[ClaimResult, list[SourceOut]]:
         try:
-            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit, excluded)
+            return await self._claim_inner(ctx, claim, languages, age, now, model_versions, emit, excluded, post_date)
         except Exception as exc:
             # Abstain on failure; never guess.
             log.exception("claim %s failed", claim.id)
@@ -256,6 +258,7 @@ class Pipeline:
         model_versions: dict[str, str],
         emit: Emit,
         excluded: set[str] = frozenset(),
+        post_date: datetime | None = None,
     ) -> tuple[ClaimResult, list[SourceOut]]:
         a, s = self.a, self.settings
         cid = claim.id
@@ -376,7 +379,7 @@ class Pipeline:
             "store",
             lambda: self.store.save_claim(
                 ctx.check_id, cid, res, embedding, a.embedder.model_version, claim.entities, sources,
-                model_versions, claim_recheck,
+                model_versions, claim_recheck, post_date=post_date,
             ),
             inputs={"status": status}, claim_id=cid,
         )

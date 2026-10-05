@@ -33,6 +33,23 @@ services:
       db:
         condition: service_healthy
 
+  worker:  # rechecks UNVERIFIED claims and crawls sources on a schedule
+    build:
+      context: .
+      args:
+        INSTALL_MODELS: ${INSTALL_MODELS:-false}
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://fact:fact@db:5432/fact
+    volumes:
+      - hfcache:/root/.cache/huggingface
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
   hfcache:

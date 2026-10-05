@@ -200,3 +200,23 @@ async def test_crawl_end_to_end(db, settings):
     (vec,) = await emb.embed(["A fire broke out at a chemical factory in Thane."])
     out = await PgSearch(engine, t, emb).search([("A fire broke out at a chemical factory in Thane.", "en")], vec, k=5)
     assert out and out[0].publisher == "Wire (MOCK)" and out[0].tier == 1
+
+
+async def test_recheck_on_postgres(seeded, settings, whitelist):
+    from app.pipeline.recheck import run_rechecks
+
+    engine, t, _ = seeded
+    s = settings.model_copy(update={"database_url": URL})
+    store = PgStore(engine, t)
+    pipeline = Pipeline(s, build_adapters(s, engine, t), store, whitelist, clock=lambda: NOW)
+    await pipeline.run(CheckInput(text="A fire broke out at a chemical factory in Thane.", post_date=NOW - timedelta(hours=2)))
+    pipeline.clock = lambda: NOW + timedelta(days=4)
+    results = await run_rechecks(pipeline)
+    assert [(r["old"], r["new"]) for r in results] == [("UNVERIFIED_TOO_EARLY", "UNVERIFIED_EVIDENCE_MISSING")]
+    async with engine.connect() as conn:
+        rows = (await conn.execute(select(t.verdicts.c.id, t.verdicts.c.superseded_at, t.verdicts.c.rechecked_from)
+                                   .order_by(t.verdicts.c.id))).all()
+        post_dates = (await conn.execute(select(t.claims.c.post_date))).scalars().all()
+    assert rows[0].superseded_at is not None and rows[1].rechecked_from == rows[0].id
+    assert post_dates[0] == post_dates[1] == NOW - timedelta(hours=2)
+    assert await run_rechecks(pipeline) == []
