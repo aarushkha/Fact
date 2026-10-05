@@ -70,3 +70,13 @@ def test_token_never_sent_in_cleartext_to_a_public_host():
         check_transport("http://models.example.com:8001", "t")
     with pytest.raises(ValueError):
         check_transport("http://34.1.2.3:8001", "t")
+
+
+def test_public_ipv6_literal_is_not_internal():
+    import pytest
+
+    from app.adapters.remote_models import check_transport
+
+    with pytest.raises(ValueError):
+        check_transport("http://[2606:4700:4700::1111]:8001", "t")
+    check_transport("http://[::1]:8001", "t")  # loopback stays allowed

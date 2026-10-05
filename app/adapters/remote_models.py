@@ -15,12 +15,10 @@ BATCH = 64  # the server's per-request limit
 
 def internal_host(host: str) -> bool:
     """Single-label names (Compose service "models", "localhost") and private/loopback IPs."""
-    if "." not in host:
-        return True
     try:
         ip = ipaddress.ip_address(host)
-    except ValueError:
-        return False
+    except ValueError:  # a name: internal only if single-label (IPv6 literals have no dot, so check IPs first)
+        return bool(host) and "." not in host
     return ip.is_private or ip.is_loopback
 
 

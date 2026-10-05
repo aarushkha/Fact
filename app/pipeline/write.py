@@ -46,6 +46,13 @@ def premise_windows(text: str) -> list[str]:
     return list(dict.fromkeys(w for w in windows if w.strip()))
 
 
+def needs_english(d: DraftSentence, passages: list[Passage]) -> bool:
+    """Devanagari text, or a quote from a non-English passage (catches romanized Hindi too)."""
+    by_id = {p.id: p for p in passages}
+    return has_devanagari(d.sentence) or any(
+        i in by_id and by_id[i].language not in (None, "en") for i in d.passage_ids)
+
+
 async def to_english(drafts: list[DraftSentence], passages: list[Passage], translator: Translator) -> list[DraftSentence]:
     """Summaries are shown in English. A draft quoting non-English evidence is translated and keeps its
     original as `source_sentence` (used to pick premise windows). NLI then checks the English sentence
@@ -55,7 +62,7 @@ async def to_english(drafts: list[DraftSentence], passages: list[Passage], trans
     by_id = {p.id: p for p in passages}
 
     async def one(d: DraftSentence) -> DraftSentence | None:
-        if not has_devanagari(d.sentence):
+        if not needs_english(d, passages):
             return d
         source = next((by_id[i].language for i in d.passage_ids
                        if i in by_id and by_id[i].language and by_id[i].language != "en"), None)
@@ -64,7 +71,7 @@ async def to_english(drafts: list[DraftSentence], passages: list[Passage], trans
                 detected = await translator.detect(d.sentence)
                 source = next((lang for lang in detected if lang != "en"), None)
             if source is None:
-                return d
+                return None  # cannot tell the language: drop rather than show it untranslated
             english = (await translator.translate(d.sentence, source)).strip()
         except Exception as exc:
             log.warning("summary translation failed (%s): %s", type(exc).__name__, exc)

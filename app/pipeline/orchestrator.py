@@ -37,9 +37,9 @@ from app.pipeline.judge import Thresholds, claim_age_hours, judge_claim, recheck
 from app.pipeline.match import decisive_factcheck, lookup_cache, match_factchecks
 from app.pipeline.normalize import normalize
 from app.pipeline.retrieve import rank_passages, retrieve
-from app.pipeline.write import to_english, verify_sentences
+from app.pipeline.write import needs_english, to_english, verify_sentences
 from app.sources import Whitelist
-from app.text import document_key, has_devanagari
+from app.text import document_key
 
 log = logging.getLogger("fact.pipeline")
 PIPELINE_VERSION = "pipeline-0.1"
@@ -382,7 +382,7 @@ class Pipeline:
             inputs={"status": status, "passage_ids": [p.id for p in passages]},
             model_version=lambda: a.llm.model_version, claim_id=cid,
         )
-        if any(has_devanagari(d.sentence) for d in drafts):  # summaries are shown in English
+        if any(needs_english(d, passages) for d in drafts):  # summaries are shown in English
             drafts = await ctx.run(
                 "translate_summary", lambda: to_english(drafts, passages, a.translator),
                 inputs={"drafts": drafts}, model_version=lambda: a.translator.model_version, claim_id=cid,

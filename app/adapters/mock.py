@@ -315,7 +315,7 @@ class MockNLIVerifier:
     async def score(self, pairs: list[tuple[str, str]]) -> list[NLIScore]:
         out = []
         for premise, hypothesis in pairs:
-            premise = _mock_english(premise)  # cross-lingual pairs: real mDeBERTa handles mr/hi -> en
+            premise, hypothesis = _mock_english(premise), _mock_english(hypothesis)  # compare in English
             r = overlap_ratio(hypothesis, premise)
             if _negated(premise) != _negated(hypothesis):
                 out.append(NLIScore(entailment=0.0, neutral=1 - r, contradiction=r))

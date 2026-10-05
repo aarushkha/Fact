@@ -142,3 +142,24 @@ async def test_untranslatable_quote_is_dropped_not_shown_in_marathi():
     p = passage("pmr", text="काहीतरी मराठी वाक्य येथे आहे.").model_copy(update={"language": "mr"})
     d = DraftSentence(sentence="काहीतरी मराठी वाक्य येथे आहे.", passage_ids=["pmr"])
     assert await to_english([d], [p], Down()) == []
+
+
+async def test_mock_nli_accepts_a_marathi_sentence_against_itself():
+    mr = "नाशिक शहर पोलिसांनी गोदावरी नदीवरील जुन्या पादचारी पुलाचा भाग रविवारी संध्याकाळी कोसळल्याची पुष्टी केली."
+    (s,) = await MockNLIVerifier().score([(mr, mr)])
+    assert s.entailment == 1.0
+
+
+async def test_undetectable_language_is_dropped_and_romanized_hindi_is_translated():
+    from app.adapters.mock import MockTranslator
+    from app.pipeline.write import to_english
+
+    class NoDetect(MockTranslator):
+        async def detect(self, text):
+            return []
+
+    d = DraftSentence(sentence="काहीतरी मराठी वाक्य येथे आहे.", passage_ids=["x"])
+    assert await to_english([d], [passage("x", text=d.sentence)], NoDetect()) == []
+    hi = passage("h", text="Mumbai airport ek hafte ke liye band hai.").model_copy(update={"language": "hi"})
+    out = await to_english([DraftSentence(sentence=hi.text, passage_ids=["h"])], [hi], MockTranslator())
+    assert [x.sentence for x in out] == ["Mumbai airport is closed for a week."]
