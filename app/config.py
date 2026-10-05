@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -82,6 +83,9 @@ class Settings(BaseSettings):
     # Under CONTRADICTED / MISLEADING_CONTEXT, drop a summary sentence that entails the claim this strongly
     # (it restates the claim, e.g. a debunk's opening quote). Stricter than the citation check on purpose.
     nli_restatement_threshold: float = 0.8
+    # Summary language: "evidence" (verbatim quotes in the source's language) or "post" (sentences translated
+    # into the post's language, each re-verified by NLI against its passage; the original stays if it fails).
+    summary_language: Literal["evidence", "post"] = "evidence"
     too_early_window_hours: float = 72
     recheck_too_early_hours: float = 6
     recheck_evidence_missing_days: float = 7

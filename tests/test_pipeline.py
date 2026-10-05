@@ -122,3 +122,14 @@ async def test_claim_failure_abstains(pipeline):
 async def test_fatal_failure_emits_error(pipeline):
     events = [e async for e in pipeline.stream(CheckInput(text="   "))]
     assert [e.name for e in events] == ["error"] and events[0].data["fatal"]
+
+
+async def test_post_language_summary_stage_runs_and_keeps_verified_sentences(settings, adapters, store, whitelist):
+    from app.pipeline.orchestrator import Pipeline
+
+    p = Pipeline(settings.model_copy(update={"summary_language": "post"}), adapters, store, whitelist, clock=lambda: NOW)
+    res = await p.run(CheckInput(text="नाशिकमध्ये गोदावरी नदीवरील पादचारी पूल रविवारी कोसळला."))
+    assert res.claims[0].status == Status.CONFIRMED and res.claims[0].summary
+    cited = {s.id for s in res.sources}
+    assert all(set(s.sources) <= cited for s in res.claims[0].summary)
+    assert "localize" in {r.stage for r in store.stage_runs}

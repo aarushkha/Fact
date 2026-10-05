@@ -37,7 +37,7 @@ from app.pipeline.judge import Thresholds, claim_age_hours, judge_claim, recheck
 from app.pipeline.match import decisive_factcheck, lookup_cache, match_factchecks
 from app.pipeline.normalize import normalize
 from app.pipeline.retrieve import rank_passages, retrieve
-from app.pipeline.write import verify_sentences
+from app.pipeline.write import localize_summary, verify_sentences
 from app.sources import Whitelist
 from app.text import document_key
 
@@ -390,10 +390,21 @@ class Pipeline:
             inputs={"drafts": drafts}, model_version=lambda: a.nli.model_version, claim_id=cid,
         )
 
+        summary = report.kept
+        if s.summary_language == "post" and report.kept and languages:
+            summary, _ = await ctx.run(
+                "localize",
+                lambda: localize_summary(report, a.translator, a.nli, s.nli_entailment_threshold, languages[0],
+                                         claim_text=claim.text_en, status=status,
+                                         restatement_threshold=s.nli_restatement_threshold),
+                inputs={"target": languages[0], "sentences": len(report.kept)},
+                model_version=lambda: f"translator={a.translator.model_version};nli={a.nli.model_version}",
+                claim_id=cid, log_output=lambda r: {"log": r[1]},
+            )
         res = result(
             status=status,
             confidence=round(confidence, 4),
-            summary=report.kept,
+            summary=summary,
             expected_evidence=expected,
             would_change_if=would_change_if(status, expected),
         )

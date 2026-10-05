@@ -208,7 +208,10 @@ The Postgres tests drop and recreate their tables; point them at a throwaway dat
    has no TOO_EARLY / NOT_CHECKABLE rows; those come only from the 10 synthetic examples. All thresholds
    in `.env.example` are untuned defaults.
 6. API keys live in `API_KEYS` (no per-key quotas, revocation means a restart). The rate limiter is shared through Postgres.
-7. LLM-written summaries are English only (extractive quotes keep the source language); consider writing them in the post's language.
+7. `SUMMARY_LANGUAGE=post` translates each verified summary sentence into the post's language (Sarvam) and shows it
+   only if it passes NLI against its own passage again; otherwise the verified original stays. Measured on 20 real
+   English evidence sentences: Hindi translations pass 13/20, Marathi 8/20 (originals 15/20), so the default is still
+   `evidence`. Hinglish posts get Devanagari Hindi.
 8. Fact-check rating map (`app/pipeline/match.py`) is a small, conservative exact-match table.
 9. `TRANSLATOR_PROVIDER=llm` detects language with script heuristics; Sarvam's text-lid returns one
     language per text (mixed-language posts are flagged by a heuristic).
