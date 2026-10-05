@@ -35,7 +35,7 @@ async def sync_sources(engine: AsyncEngine, t: Tables, whitelist: Whitelist) -> 
         for e in whitelist.entries:
             values = {
                 "domain": host_of(e.domain), "name": e.name, "tier": e.tier, "kind": e.kind,
-                "language": e.language, "rss_url": e.rss_url, "sitemap_url": e.sitemap_url,
+                "language": e.language, "rss_url": " ".join(e.feeds) or None, "sitemap_url": e.sitemap_url,
             }
             stmt = insert(t.sources).values(**values)
             await conn.execute(stmt.on_conflict_do_update(index_elements=["domain"], set_=values))
@@ -64,12 +64,13 @@ async def upsert_document(
     full_text: str,
     chunks: list[ChunkIn],
     embedding_model: str,
+    claim_review: dict | None = None,
 ) -> int:
     """Insert or replace a document and all of its passages in one transaction."""
     async with engine.begin() as conn:
         values = {
             "source_id": source_id, "url": url, "title": title, "language": language or entry.language,
-            "published_at": published_at, "content_hash": content_hash(full_text),
+            "published_at": published_at, "content_hash": content_hash(full_text), "claim_review": claim_review,
         }
         stmt = insert(t.documents).values(**values)
         doc_id = (

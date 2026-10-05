@@ -7,8 +7,8 @@
 # rss_url / sitemap_url: real feed URLs only. Every URL below returned a valid feed/sitemap on 2026-10-05.
 # todo: true -> entry is ignored until filled in.
 #
-# Not added because they could not be verified from the build environment (HTTP 403 / timeout / no feed):
-# PIB (pib.gov.in), Maharashtra DGIPR (mahasamvad.in), PTI, ANI, DD News, All India Radio, ECI, BOOM.
+# Feeds not added because they could not be verified from the build environment (HTTP 403 / timeout / none):
+# PIB, Maharashtra DGIPR (mahasamvad.in), PTI, ANI, DD News, All India Radio, ECI, BOOM, NewsMeter.
 # Add them once you confirm their feed URLs from your network.
 
 sources:
@@ -16,11 +16,19 @@ sources:
   # Some article pages answered HTTP 418 to the crawler from the build environment.
   - {name: Reserve Bank of India, domain: rbi.org.in, rss_url: "https://www.rbi.org.in/pressreleases_rss.xml", language: en, tier: 1, kind: institution}
 
+  - {name: PIB Fact Check (Press Information Bureau), domain: pib.gov.in, language: en, tier: 1, kind: government}
+
   # ---- tier 2: fact-checkers ----
   - {name: Alt News, domain: altnews.in, rss_url: "https://www.altnews.in/feed/", language: en, tier: 2, kind: factchecker}
   - {name: Factly, domain: factly.in, rss_url: "https://factly.in/feed/", language: en, tier: 2, kind: factchecker}
-  - {name: Vishvas News, domain: vishvasnews.com, rss_url: "https://www.vishvasnews.com/feed/", language: hi, tier: 2, kind: factchecker}
-  - {name: Newschecker, domain: newschecker.in, rss_url: "https://newschecker.in/feed", language: en, tier: 2, kind: factchecker}
+  - {name: Vishvas News, domain: vishvasnews.com, rss_url: ["https://www.vishvasnews.com/feed/", "https://www.vishvasnews.com/marathi/feed/"], language: hi, tier: 2, kind: factchecker}
+  - {name: Newschecker, domain: newschecker.in, rss_url: ["https://newschecker.in/feed", "https://www.newschecker.in/hi/feed", "https://newschecker.in/mr/feed"], language: en, tier: 2, kind: factchecker}
+  - {name: Fact Crescendo, domain: factcrescendo.com, rss_url: ["https://www.factcrescendo.com/feed/", "https://marathi.factcrescendo.com/feed/"], language: hi, tier: 2, kind: factchecker}
+  # Whitelisted without a feed (feeds blocked/empty from the build environment): their reviews still count
+  # when they arrive through the Google Fact Check API.
+  - {name: BOOM, domain: boomlive.in, language: en, tier: 2, kind: factchecker}
+  - {name: NewsMobile, domain: newsmobile.in, language: en, tier: 2, kind: factchecker}
+  - {name: NewsMeter, domain: newsmeter.in, language: en, tier: 2, kind: factchecker}
 
   # ---- tier 2: outlets (English) ----
   - {name: The Hindu, domain: thehindu.com, rss_url: "https://www.thehindu.com/news/national/feeder/default.rss", language: en, tier: 2, kind: outlet}

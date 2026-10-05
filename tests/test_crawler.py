@@ -75,3 +75,27 @@ def test_feed_urls_lose_fragments():
     rss = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>
     <item><title>A</title><link>https://x.example/a#publisher=newsstand</link></item></channel></rss>"""
     assert parse_feed(rss)[0].url == "https://x.example/a"
+
+
+def test_extract_claim_review_from_json_ld():
+    from crawler.extract import claim_review_text, extract_claim_review
+
+    html = """<html><head><script type="application/ld+json">{"@context":"https://schema.org","@graph":[
+      {"@type":"WebPage"},
+      {"@type":"ClaimReview","claimReviewed":"Video shows floods in Kolhapur this week","datePublished":"2026-10-01",
+       "reviewRating":{"@type":"Rating","alternateName":"Misleading"},
+       "itemReviewed":{"@type":"Claim","author":{"@type":"Organization","name":"Social media users"}}}]}
+    </script></head><body></body></html>"""
+    r = extract_claim_review(html)
+    assert r == {"claim_reviewed": "Video shows floods in Kolhapur this week", "rating": "Misleading",
+                 "date_published": "2026-10-01", "claimant": "Social media users"}
+    assert claim_review_text(r).startswith('Fact-check. Claim reviewed: "Video shows')
+    assert extract_claim_review("<script type='application/ld+json'>not json</script>") is None
+
+
+def test_source_entry_accepts_several_feeds():
+    from app.sources import SourceEntry
+
+    assert SourceEntry(name="x", domain="x.in", tier=2, rss_url=["a", "b"]).feeds == ["a", "b"]
+    assert SourceEntry(name="x", domain="x.in", tier=2, rss_url="a").feeds == ["a"]
+    assert SourceEntry(name="x", domain="x.in", tier=2).feeds == []

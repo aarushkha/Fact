@@ -30,7 +30,7 @@ from app.db.tables import Tables, build_tables, init_db, make_engine
 from app.sources import SourceEntry, Whitelist, host_of, load_whitelist_file
 from crawler.chunk import chunk_text
 from crawler.discover import Candidate, parse_feed, parse_sitemap
-from crawler.extract import extract_article
+from crawler.extract import claim_review_text, extract_article, extract_claim_review
 
 log = logging.getLogger("fact.crawler")
 MAX_CHILD_SITEMAPS = 5
@@ -72,8 +72,8 @@ class Robots:
 
 async def discover(client: httpx.AsyncClient, entry: SourceEntry) -> list[Candidate]:
     found: list[Candidate] = []
-    if entry.rss_url:
-        r = await client.get(entry.rss_url)
+    for feed_url in entry.feeds:
+        r = await client.get(feed_url)
         r.raise_for_status()
         found += parse_feed(r.content)
     if entry.sitemap_url:
@@ -143,6 +143,9 @@ async def crawl_source(
                     stats.failed += 1
                     return
                 chunks = chunk_text(article.text, settings.chunk_max_words)
+                review = extract_claim_review(r.text)
+                if review:  # a fact-check's structured verdict becomes its own, searchable passage
+                    chunks.append(claim_review_text(review))
                 vectors = await embedder.embed(chunks)
                 await upsert_document(
                     engine, tables,
@@ -150,7 +153,7 @@ async def crawl_source(
                     language=entry.language, published_at=c.published_at or article.published_at,
                     full_text=article.text,
                     chunks=[ChunkIn(passage_id(final_url, i), t, v) for i, (t, v) in enumerate(zip(chunks, vectors))],
-                    embedding_model=embedder.model_version,
+                    embedding_model=embedder.model_version, claim_review=review,
                 )
                 stats.stored += 1
                 stats.passages += len(chunks)
@@ -182,7 +185,7 @@ async def crawl(
     for entry in whitelist.entries:
         if only_domain and host_of(entry.domain) != host_of(only_domain):
             continue
-        if not (entry.rss_url or entry.sitemap_url):
+        if not (entry.feeds or entry.sitemap_url):
             log.info("skip %s: no rss_url or sitemap_url", entry.name)
             continue
         try:
@@ -210,7 +213,7 @@ async def _main(args: argparse.Namespace) -> int:
             for entry in whitelist.entries:
                 if args.source and host_of(entry.domain) != host_of(args.source):
                     continue
-                if entry.rss_url or entry.sitemap_url:
+                if entry.feeds or entry.sitemap_url:
                     for c in (await discover(client, entry))[: args.limit or 20]:
                         print(f"{entry.name}\t{c.published_at}\t{c.url}")
             return 0

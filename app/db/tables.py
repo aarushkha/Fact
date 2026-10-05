@@ -74,7 +74,7 @@ def build_tables(dim: int) -> Tables:
         Column("published_at", tz),
         Column("fetched_at", tz, server_default=func.now(), nullable=False),
         Column("content_hash", Text),
-        Column("claim_review", JSONB),  # schema.org ClaimReview found on the page (fact-check articles)
+        Column("claim_review", JSONB(none_as_null=True)),  # schema.org ClaimReview found on the page (fact-check articles)
     )
     passages = Table(
         "passages", md,
@@ -128,7 +128,7 @@ def build_tables(dim: int) -> Tables:
         Column("entity_keys", ARRAY(Text), nullable=False),
         Column("embedding", Vector(dim)),
         Column("embedding_model", Text, nullable=False),
-        Column("signals", JSONB),  # rumour-cascade signals at check time
+        Column("signals", JSONB(none_as_null=True)),  # rumour-cascade signals at check time
         Column("created_at", tz, server_default=func.now(), nullable=False),
         Index("ix_claims_entity_keys", "entity_keys", postgresql_using="gin"),
         Index(

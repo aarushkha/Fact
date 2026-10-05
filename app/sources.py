@@ -13,12 +13,18 @@ from pydantic import BaseModel, Field
 class SourceEntry(BaseModel):
     name: str
     domain: str
-    rss_url: str | None = None
+    rss_url: str | list[str] | None = None  # one feed or several (e.g. per-language feeds)
     sitemap_url: str | None = None
     language: str | None = None
     tier: int = Field(ge=1, le=3)  # 1 = primary, 2 = original reporting, 3 = aggregator
     kind: str | None = None  # police, court, government, institution, wire, outlet, factchecker, aggregator
     todo: bool = False  # placeholder entries are never used as evidence
+
+    @property
+    def feeds(self) -> list[str]:
+        if not self.rss_url:
+            return []
+        return [self.rss_url] if isinstance(self.rss_url, str) else list(self.rss_url)
 
 
 def host_of(url_or_domain: str) -> str:
