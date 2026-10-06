@@ -101,6 +101,11 @@ class Settings(BaseSettings):
 
     # --- API protection ---
     api_keys: str = ""  # comma-separated; empty = auth disabled (local development only)
+    # Guards the settings page/API (X-Admin-Token). Empty -> an API key is needed instead, or nothing when
+    # API_KEYS is empty too. When set in the environment, the settings page cannot change it.
+    admin_token: str = ""
+    # Where the settings page keeps its overrides when there is no database (empty = memory only).
+    settings_overrides_file: str = ""
     rate_limit_per_minute: int = 10  # checks per client (API key, or IP when auth is off); 0 = off
 
     @property

@@ -13,13 +13,12 @@ import logging
 import time
 
 
-from app.adapters.factory import build_adapters
 from app.config import get_settings
 from app.db.pg_store import PgStore
 from app.db.tables import build_tables, init_db, make_engine
-from app.pipeline.orchestrator import Pipeline
 from app.pipeline.recheck import run_rechecks
-from app.sources import load_whitelist_file
+from app.runtime import ModelReuse, build
+from app.runtime_settings import DbOverrides, check_readiness, merge_settings
 
 log = logging.getLogger("fact.worker")
 
@@ -28,18 +27,35 @@ async def main_async(once: bool, crawl: bool) -> None:
     from crawler.run import crawl as run_crawl
     from crawler.run import crawl_client
 
-    s = get_settings()
-    logging.basicConfig(level=s.log_level)
-    if not s.database_url:
+    base = get_settings()
+    logging.basicConfig(level=base.log_level)
+    if not base.database_url:
         raise SystemExit("The worker needs DATABASE_URL.")
-    engine, tables = make_engine(s.database_url), build_tables(s.embedding_dim)
+    engine, tables = make_engine(base.database_url), build_tables(base.embedding_dim)
     await init_db(engine, tables)
-    adapters = build_adapters(s, engine, tables)
-    whitelist = load_whitelist_file(s.effective_sources_file)
-    pipeline = Pipeline(s, adapters, PgStore(engine, tables), whitelist)
+    store, models, overrides_store = PgStore(engine, tables), ModelReuse(), DbOverrides(engine, tables)
+    s = base
+    built = build(s, store, models, engine, tables)
+    adapters, whitelist, pipeline = built.adapters, built.whitelist, built.pipeline
+    seen: dict = {}  # the saved web-page settings already looked at
     next_crawl = next_recheck = 0.0
     try:
         while True:
+            # Settings saved on the web page apply without a restart. A bad set is logged and the previous
+            # settings stay; it is remembered so it is not retried every 30 s.
+            try:
+                saved = await overrides_store.load()
+                if saved != seen:
+                    seen = saved
+                    new = merge_settings(base, saved)
+                    if problems := check_readiness(new).errors:
+                        raise ValueError(" ".join(problems))
+                    built = build(new, store, models, engine, tables)
+                    s, adapters, whitelist, pipeline = new, built.adapters, built.whitelist, built.pipeline
+                    logging.getLogger().setLevel(s.log_level)
+                    log.info("settings reloaded (mock_mode=%s)", s.mock_mode)
+            except Exception:
+                log.exception("could not apply the saved settings; keeping the previous ones")
             now = time.monotonic()
             # A failed pass is logged and waits for its next slot: one bad pass must not stop the worker.
             # Crawl first, so a recheck that is due at the same time sees the newly indexed evidence.

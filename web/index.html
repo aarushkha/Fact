@@ -18,6 +18,8 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
   main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  nav { display: flex; gap: 14px; font-size: 13px; margin-bottom: 14px; }
+  nav a { color: var(--accent); text-decoration: none; } nav a.here { color: var(--text); font-weight: 600; }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
@@ -62,6 +64,7 @@
 </head>
 <body>
 <main>
+  <nav><a href="/" class="here">Test console</a><a href="/monitor">Monitor</a><a href="/settings">Settings</a></nav>
   <h1>Fact test console</h1>
   <p class="sub">Statuses describe the evidence found, not reality. <span id="mode"></span></p>
 
@@ -116,7 +119,7 @@ let finalResponse = null;
 let claimMeta = {};
 
 fetch("/api/health").then(r => r.json()).then(h => {
-  $("mode").textContent = h.mock_mode ? "Running in MOCK_MODE." : "";
+  $("mode").innerHTML = (h.mock_mode ? "Running in <strong>mock mode</strong>." : "Running in <strong>real mode</strong>.") + ' <a href="/settings">Change in settings</a>.';
   if (h.auth_required) {
     $("keyRow").style.display = "block";
     try { $("apiKey").value = localStorage.getItem("factApiKey") || ""; } catch (e) {}

@@ -12,6 +12,8 @@
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui, sans-serif; }
   main { max-width:1100px; margin:0 auto; padding:20px 16px 48px; }
+  nav { display:flex; gap:14px; font-size:13px; margin-bottom:14px; }
+  nav a { color:var(--accent); text-decoration:none; } nav a.here { color:var(--text); font-weight:600; }
   h1 { font-size:20px; margin:0 0 12px; } h2 { font-size:14px; margin:0 0 8px; }
   .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
   select, input, button { font:inherit; color:inherit; background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:5px 8px; }
@@ -28,6 +30,7 @@
 </head>
 <body>
 <main>
+  <nav><a href="/">Test console</a><a href="/monitor" class="here">Monitor</a><a href="/settings">Settings</a></nav>
   <h1>Fact monitor</h1>
   <div class="bar">
     <label>Window <select id="hours"><option>1</option><option>6</option><option selected>24</option><option>168</option></select> hours</label>

@@ -61,8 +61,16 @@ def _fallbacks(settings: Settings) -> list[str]:
     return [m.strip() for m in settings.llm_fallback_models.split(",") if m.strip()]
 
 
-def build_adapters(settings: Settings, engine: AsyncEngine | None = None, tables: Tables | None = None) -> Adapters:
-    embedder = build_embedder(settings)
+def build_adapters(
+    settings: Settings,
+    engine: AsyncEngine | None = None,
+    tables: Tables | None = None,
+    *,
+    embedder: Embedder | None = None,
+    nli=None,
+) -> Adapters:
+    """`embedder` / `nli` let a settings reload keep models that are already loaded (they take minutes to load)."""
+    embedder = embedder or build_embedder(settings)
     search = build_search(settings, embedder, engine, tables)
     if settings.mock_mode:
         return Adapters(
@@ -132,7 +140,7 @@ def build_adapters(settings: Settings, engine: AsyncEngine | None = None, tables
         llm=pipeline_llm,
         classifier=classifier,
         embedder=embedder,
-        nli=build_nli(settings),
+        nli=nli or build_nli(settings),
         factcheck=GoogleFactCheckSearch(settings.google_factcheck_api_key),
         search=search,
     )

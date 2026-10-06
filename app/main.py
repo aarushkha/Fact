@@ -10,13 +10,12 @@ from typing import AsyncIterator, Callable
 from fastapi import FastAPI
 
 from app.adapters.base import Adapters
-from app.adapters.factory import build_adapters
 from app.api.routes import router
-from app.api.security import PgRateLimiter, SlidingWindowLimiter, parse_keys
+from app.api.settings_routes import router as settings_router
 from app.config import Settings, get_settings
 from app.db.store import InMemoryStore, Store
-from app.pipeline.orchestrator import Pipeline
-from app.sources import load_whitelist_file
+from app.runtime import ModelReuse, Runtime, build, prepare_backend
+from app.runtime_settings import DbOverrides, FileOverrides, MemoryOverrides, OverrideStore
 
 log = logging.getLogger("fact")
 
@@ -26,15 +25,10 @@ def create_app(
     adapters: Adapters | None = None,
     store: Store | None = None,
     clock: Callable[[], datetime] | None = None,
+    overrides: OverrideStore | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=settings.log_level)
-    whitelist = load_whitelist_file(settings.effective_sources_file)
-    if not len(whitelist):
-        log.warning(
-            "Source whitelist %s has no usable entries; every claim will be UNVERIFIED.",
-            settings.effective_sources_file,
-        )
 
     engine = tables = None
     if settings.database_url:
@@ -43,36 +37,38 @@ def create_app(
 
         engine, tables = make_engine(settings.database_url), build_tables(settings.embedding_dim)
         store = store or PgStore(engine, tables)
-    adapters = adapters or build_adapters(settings, engine, tables)
-    pipeline = Pipeline(settings, adapters, store or InMemoryStore(), whitelist, clock=clock)
+    store = store or InMemoryStore()
+    models = ModelReuse()
+    built = build(settings, store, models, engine, tables, clock, adapters)
+    if overrides is None:
+        if engine is not None and tables is not None:
+            overrides = DbOverrides(engine, tables)
+        elif settings.settings_overrides_file:
+            overrides = FileOverrides(settings.settings_overrides_file)
+        else:
+            overrides = MemoryOverrides()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if engine is not None and tables is not None:
-            from app.db.index import sync_sources
-            from app.db.seed import seed_mock_corpus
             from app.db.tables import init_db
 
             await init_db(engine, tables)
-            await sync_sources(engine, tables, whitelist)
-            if settings.mock_mode and settings.effective_search_backend == "postgres":
-                await seed_mock_corpus(engine, tables, whitelist, adapters.embedder)
+            await prepare_backend(settings, built, engine, tables)
+        await runtime.load()  # settings saved from the web page win over the environment
         yield
         if engine is not None:
             await engine.dispose()
 
     app = FastAPI(title="Fact", version="0.1.0", lifespan=lifespan)
-    app.state.settings = settings
-    app.state.api_keys = parse_keys(settings.api_keys)
-    app.state.rate_limiter = (
-        PgRateLimiter(engine, tables.rate_limit_hits, settings.rate_limit_per_minute)
-        if engine is not None and tables is not None
-        else SlidingWindowLimiter(settings.rate_limit_per_minute)
-    )
+    runtime = Runtime(app, settings, overrides, store, models, engine, tables, clock)
+    runtime.install(built)
+    app.state.runtime = runtime
+    app.state.overrides_kind = overrides.kind
     if not app.state.api_keys:
         log.warning("API_KEYS is empty: the API is open to anyone who can reach it (fine for local testing only).")
-    app.state.pipeline = pipeline
     app.include_router(router)
+    app.include_router(settings_router)
     return app
 
 
