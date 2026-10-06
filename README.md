@@ -26,6 +26,23 @@ The test page lets you paste text or upload a screenshot (with an optional post 
 events live and shows claim cards (status, confidence, cited sentences, expected-evidence checklist),
 plus a raw-JSON toggle and the model versions.
 
+## Settings page (no .env editing, no Docker restarts)
+
+Open `/settings` to switch between mock and real mode, enter the API keys, pick providers and models, tune the
+thresholds, API protection and worker/crawler options. **Save and apply** takes effect immediately in the API and
+within ~30 s in the worker; already loaded models are kept. A change that cannot work (real mode without keys, or
+without the models installed) is refused with the reason and the running configuration stays as it was.
+
+- Precedence: value saved on the page > `.env` / environment > default. Each field shows where its value comes from,
+  with a button to revert it. Changes are stored in the `settings_overrides` table (or `SETTINGS_OVERRIDES_FILE`
+  without a database). API keys are stored in plain text, like in `.env`, and are never sent back to the browser.
+- Who may open it: `ADMIN_TOKEN` if set (always from the environment wins), else any API key from `API_KEYS`, else
+  anyone who can reach the server. **Set an admin token before exposing the server**; you can do it on the page.
+- Not editable there (change `.env` and restart): `DATABASE_URL`, `SOURCES_FILE`, provider base URLs, embedder/NLI model
+  pins and `EMBEDDING_DIM`, Docker-level choices (ports, `INSTALL_MODELS` build arg, the `models` profile). Real mode
+  needs the image built with `INSTALL_MODELS=true` (or a running models service whose URL you enter on the page).
+- The separate models service (`app.model_server`) and the `crawler.run` CLI still read only the environment.
+
 ## MOCK_MODE
 
 `MOCK_MODE=true` (the default) swaps every external model for a deterministic mock and uses a small

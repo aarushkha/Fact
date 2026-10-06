@@ -66,6 +66,10 @@ Pipeline (`app/pipeline/orchestrator.py` chains the stages; every stage is logge
 - `crawler/`: feeds/sitemaps → robots.txt → same-domain check (also after redirects) → trafilatura →
   sentence chunks → embed `title + chunk` → upsert; also ClaimReview JSON-LD → extra passage.
 - `app/worker.py` + `app/pipeline/recheck.py`: rechecks UNVERIFIED claims, scheduled crawl.
+- `app/runtime_settings.py` + `app/runtime.py` + `app/api/settings_routes.py` + `web/settings.html`: the `/settings` page.
+  Editable fields are declared once (`GROUPS`); overrides (UI > env > default) live in `settings_overrides` (or a file),
+  `Runtime.update` builds the new pipeline first and swaps it in only if that works (models are reused), the worker
+  re-reads the table every loop. Never make infrastructure (DB URL, base URLs, model pins) editable there; secrets are write-only.
 - `app/monitoring.py` (+ `web/monitor.html`), `app/api/security.py` (API keys, sliding-window rate limit),
   `app/model_server.py` (+ `adapters/remote_models.py`).
 - `eval/`: `claims.jsonl` (10 synthetic rows), `factchecks.jsonl` (300 real rows; the first 200 are the ones earlier notes refer to), `run.py`.

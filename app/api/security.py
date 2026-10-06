@@ -91,6 +91,17 @@ def authenticate(request: Request) -> str:
     raise HTTPException(401, "Missing or invalid X-API-Key header.", headers={"WWW-Authenticate": "API-Key"})
 
 
+def require_admin(request: Request) -> None:
+    """Guard for the settings page API: the admin token when one is set, else an API key, else open (local testing)."""
+    token: str = request.app.state.admin_token
+    if not token:
+        authenticate(request)
+        return
+    given = request.headers.get("x-admin-token", "")
+    if not (given and hmac.compare_digest(given.encode(), token.encode())):
+        raise HTTPException(401, "Missing or invalid X-Admin-Token header.", headers={"WWW-Authenticate": "Admin-Token"})
+
+
 async def guard_check(request: Request) -> str:
     """Dependency for the check endpoints: auth, then rate limit."""
     identity = authenticate(request)
