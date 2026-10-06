@@ -1,0 +1,704 @@
+{
+ "google/gemini-3.8-flash": {
+  "score": {
+   "n": 36,
+   "errors": 0,
+   "post_text CER (lower=better)": 0.022,
+   "post_text exact": 0.6667,
+   "handle exact": 0.0,
+   "date exact": 1.0,
+   "reply leaked into post_text": 0.0556,
+   "not transcribed (translated)": 0.0,
+   "CER en": 0.0,
+   "CER hi": 0.0324,
+   "CER mr": 0.0335
+  },
+  "usd": 0.0496,
+  "raw": [
+   {
+    "post_text": "The video shows the demolition of a mosque on the grounds of finding posters bearing 'I love Mohammed' from the mosque.",
+    "account_handle": "Viral Updates 0\n@india_9152",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video of Cockroach Janta Party (CJP) founder Abhijeet Dipke meeting Jharkhand Congress president Keshav Mahto Kamlesh.",
+    "account_handle": "Viral Updates 1\n@mumbai_4367",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video shows illegal Bangladeshi immigrants leaving India for Bangladesh after the Suvendu Adhikari government warned that illegal migrants would be sent to detention camps.",
+    "account_handle": "Viral Updates 2\n@news_6634",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "This video shows Hasan Sahadat, the main culprit in the mob lynching of Dipu Das in Bangladesh, dying after being electrocuted.",
+    "account_handle": "Viral Updates 3\n@khabar_5558",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows the collision between a Pakistani naval vessel and an Indian Navy warship on 15 September 2026.",
+    "account_handle": "Viral Updates 4\n@news_3230",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows Gen-Z protesters in Delhi in September 2026 demanding the removal of EVMs and the resignation of CEC Gyanesh Kumar.",
+    "account_handle": "Viral Updates 5\n@india_8996",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows an Australian man working at a brick kiln after his passport and belongings were stolen in Agra.",
+    "account_handle": "Viral Updates 6\n@sach_8422",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video showing the body of a Bangladeshi infiltrator allegedly killed by the BSF along the Tripura border in June 2026.",
+    "account_handle": "Viral Updates 7\n@mumbai_4869",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows visuals from the ‘Reservation Hatao Andolan’ held at Jantar Mantar, Delhi, on 21 August 2026.",
+    "account_handle": "Viral Updates 8 @sach_8952",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "Kolkata's Suhrawardy Avenue was named to honour Huseyn Shaheed Suhrawardy, who is responsible for the Great Calcutta Killings of 1946.",
+    "account_handle": "Viral Updates 9\n@mumbai_4812",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "Following a Quran-burning incident in Sweden, Kuwait and Qatar announced the expulsion of all Swedish people from the countries.",
+    "account_handle": "Viral Updates 10\n@khabar_5294",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows former Bihar Chief Minister Nitish Kumar commenting on the police action in the Bharat Bhushan Tiwari encounter case.",
+    "account_handle": "Viral Updates 11\n@india_3202",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "यूपी पुलिस की परीक्षा में सेलेक्शन न होने के लिए आरक्षण को दोष देने वाली कांवड़ गर्ल मानसी राजपूत दसवीं क्लास में फेल हो गई थीं।",
+    "account_handle": "Viral Updates 12\n@sach_7907",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "ईरान के डेलिगेशन को अमेरिका से बातचीत के लिए इस्लामाबाद लाने के लिए पाकिस्तान ने ये फाइटर जेट भेजे हैं।",
+    "account_handle": "Viral Updates 13\n@india_2550",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "इस पोस्ट में इस यूजर्स ने कहा है की नेहरू ने पत्नी कमला के साथ बड़ा ही दुर्भाग्यपूर्ण व्यवहार किया और उन्हें परदेस में अकेले मरने के लिए छोड़ दिया",
+    "account_handle": "Viral Updates 14\n@mumbai_6510",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "माँ......बहु : इन्होंने अपनी लाइफ जी ली अब हमको अपनी लाइफ जीनी है ।सास : हमको अपने घर रहना है हमे जबरदस्ती आश्रम भेज रहे हैं",
+    "account_handle": "Viral Updates 15\n@mumbai_3958",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "गाजियाबाद डासना फैक्ट्री में ब्लास्ट अभी तक 40 लोगों की मौत हुई ,भगवान इन सभी की आत्मा को शांति दे।“",
+    "account_handle": "Viral Updates 16\n@khabar_9597",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "अब तो जम्मू कश्मीर में भी मोदी मोदी गाने पर कश्मीरी झूम रहें हैं। ऐसे ही नहीं विकास बोलता है भाई kashmir Muslim.",
+    "account_handle": "Viral Updates 17\n@sach_1449",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "उज्जैन की एक महिला ने 45 साल पहले एक सुनार की दुकान से सोने का हार चुराया था. जब उसने AI से 80s के ट्रेंड वाली फोटो बनाकर शेयर की, तो सुनार ने उसे पहचान लिया और वो पकड़ी गई.\n\nReader यह खबर झूठी है, कृपया जांच करें।",
+    "account_handle": "Viral Updates 18\n@khabar_9718",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "SORRY नाम की यह फिल्म - सिर्फ 4 मिनट 17 सेकंड की फिल्म है और इसे 30 मिनट में बनाया गया था। लेकिन इसे ऑस्कर अवार्ड मिला।",
+    "account_handle": "Viral Updates 19\n@india_4081",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "This video of two women fighting among themselves is from a recent incident in a government school in Rajasthan.",
+    "account_handle": "Viral Updates 20\n@india_6195",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "गंगा रिसॉर्ट के पास साधु के वेश में एक मुस्लिम मौलाना पकड़ा गया, जो बच्चियों को फंसाने की फिराक में था.",
+    "account_handle": "Viral Updates 21\n@news_1748",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "काफ़ी दर्द हुआ सुनकर लाल सिंह चड्ढा सुपर फ्लॉप हो गई आमिर खान ने खुद स्वीकार किया। यह सब सभी सनातनियो की एकता का कमाल है।",
+    "account_handle": "Viral Updates 22\n@mumbai_8852",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "डियो राजस्थान की बताई जा रही है जहां भैरों बाबा के मंदिर को तोड़कर मूर्ति को ट्रैक्टर से घसीटते हुए ले जाया जा रहा है...",
+    "account_handle": "Viral Updates 23\n@news_3188",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "एका व्यक्तीने त्याच्या पाठीवर उद्धव आणि आदित्य ठाकरे यांचा टॅटू काढले आहेत आणि त्याच्या खालच्या भागावर संजय राऊत यांचा टॅटू असल्याचा दावा करण्यात आला आहे.",
+    "account_handle": "Viral Updates 24\n@khabar_1599",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "शपथविधी सोहळ्यात नितीन गडकरी यांनी नरेंद्र मोदी यांना अभिवादन न केल्याचा फोटो सोशल मीडियावर व्हायरल.\n\nReader ही बातमी खोटी आहे, कृपया तपासा.",
+    "account_handle": "Viral Updates 25\n@mumbai_454",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "व्हायरल व्हिडिओमध्ये मुख्यमंत्री एकनाथ शिंदे हे अहमदपूर-चाकूर मतदारसंघातील जनसुराज्य शक्ती पक्षाचे उमेदवार गणेश हाके यांच्या शिट्टी या चिन्हाला मतदान करण्याचं आवाहन करताना दिसत आहेत.",
+    "account_handle": "Viral Updates 26\n@news_7951",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "तो लष्करी अधिकाऱ्याचा मुलगा आहे ज्याच्या वडिलांचा अतिरेक्यांविरुद्धच्या कारवाईत मृत्यू झाला. ही बातमी कळताच त्याच्या आईचा धक्का बसून मृत्यू झाला. तो बोर्डिंग आर्मी पब्लिक स्कूलमध्ये शिकत आहे.",
+    "account_handle": "Viral Updates 27\n@news_9016",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "PM नरेंद्र मोदींच्या रॅलीत एक व्यक्ती हेलिकॉप्टरला पकडून हवेत लटकल्याचा व्हिडिओ व्हायरल होत आहे.",
+    "account_handle": "Viral Updates 28 @sach_1246",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "एका रहिवासी सोसायटीतून रामनामाचा जयघोष व मतदानाचे आवाहन हे महाराष्ट्र निवडणुकीच्या प्रचारात करण्यात आला दावा केला गेला आहे",
+    "account_handle": "Viral Updates 29\n@sach_5839",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "राहुल गांधी म्हणतात की, मी अशी एक मशिन लावणार जी एका बाजूने बटाटे टाकले की, दुसऱ्या बाजूला सोने बनून बाहेर पडेल.",
+    "account_handle": "Viral Updates 30\n@mumbai_7753",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "मला गर्व आहे मुस्लिम समाजामुळे माझे खासदार निवडून आलो. मी माझ्या भाषणात हिंदू उल्लेख बंद केला म्हणून भाजपला मिरच्या झोंबल्या. हिंदूच्या मतांची आता मला तितकीशी गरज भासणार नाही. मुस्लिम मतांवर विधानसभा पण जिंकून दाखवतो.",
+    "account_handle": "Viral Updates 31\n@khabar_3366",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "लोकसभा निवडणुकीच्या पाचव्या टप्प्यानंतर सरसंघचालक मोहन भागवत यांनी भारताच्या स्वातंत्र्यलढ्यातील काँग्रेसच्या भूमिकेचे कौतुक केले.",
+    "account_handle": "Viral Updates 32\n@khabar_9435",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "आयसीसी चॅम्पियन्स ट्रॉफीमध्ये भारत विरुद्ध पाकिस्तानच्या झालेल्या सामन्यात चाहते बाबर आझमला ट्रोल करत असल्याचा व्हिडिओ व्हायरल.",
+    "account_handle": "Viral Updates 33\n@news_2692",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "केस कापून झाल्यावर डोक्याचा पाठीचा मसाज करून झाल्यावर मान वाजवताना मेंदूला रक्त पुरवठा करणारी नस दबल्याने ब्रेन स्ट्रोक आल्याने मृत्यु.",
+    "account_handle": "Viral Updates 34\n@sach_2020",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "गुजरात : अदानीच्या बंदरात हजारो गायी ट्रकमध्ये उभ्या आहेत. अरब देशांमध्ये जाण्यासाठी.",
+    "account_handle": "Viral Updates 35\n@india_316",
+    "post_date": "5d",
+    "image_description": ""
+   }
+  ]
+ },
+ "anthropic/claude-sonnet-5.5": {
+  "score": {
+   "n": 36,
+   "errors": 0,
+   "post_text CER (lower=better)": 0.0011,
+   "post_text exact": 0.9167,
+   "handle exact": 0.7778,
+   "date exact": 1.0,
+   "reply leaked into post_text": 0.0,
+   "not transcribed (translated)": 0.0,
+   "CER en": 0.0,
+   "CER hi": 0.0029,
+   "CER mr": 0.0004
+  },
+  "usd": 0.1069,
+  "raw": [
+   {
+    "post_text": "The video shows the demolition of a mosque on the grounds of finding posters bearing 'I love Mohammed' from the mosque.",
+    "account_handle": "@india_9152",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video of Cockroach Janta Party (CJP) founder Abhijeet Dipke meeting Jharkhand Congress president Keshav Mahto Kamlesh.",
+    "account_handle": "@mumbai_4367",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video shows illegal Bangladeshi immigrants leaving India for Bangladesh after the Suvendu Adhikari government warned that illegal migrants would be sent to detention camps.",
+    "account_handle": "@news_6634",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "This video shows Hasan Sahadat, the main culprit in the mob lynching of Dipu Das in Bangladesh, dying after being electrocuted.",
+    "account_handle": "@khabar_5558",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows the collision between a Pakistani naval vessel and an Indian Navy warship on 15 September 2026.",
+    "account_handle": "@news_3230",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows Gen-Z protesters in Delhi in September 2026 demanding the removal of EVMs and the resignation of CEC Gyanesh Kumar.",
+    "account_handle": "@india_8996",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows an Australian man working at a brick kiln after his passport and belongings were stolen in Agra.",
+    "account_handle": "@sach_8422",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video showing the body of a Bangladeshi infiltrator allegedly killed by the BSF along the Tripura border in June 2026.",
+    "account_handle": "@mumbai_4869",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows visuals from the ‘Reservation Hatao Andolan’ held at Jantar Mantar, Delhi, on 21 August 2026.",
+    "account_handle": "@sach_8952",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "Kolkata's Suhrawardy Avenue was named to honour Huseyn Shaheed Suhrawardy, who is responsible for the Great Calcutta Killings of 1946.",
+    "account_handle": "@mumbai_4812",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "Following a Quran-burning incident in Sweden, Kuwait and Qatar announced the expulsion of all Swedish people from the countries.",
+    "account_handle": "@khabar_5294",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows former Bihar Chief Minister Nitish Kumar commenting on the police action in the Bharat Bhushan Tiwari encounter case.",
+    "account_handle": "@india_3202",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "यूपी पुलिस की परीक्षा में सेलेक्शन न होने के लिए आरक्षण को दोष देने वाली कांवड़ गर्ल मानसी राजपूत दसवीं क्लास में फेल हो गई थीं.",
+    "account_handle": "@sach_7907",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "ईरान के डेलिगेशन को अमेरिका से बातचीत के लिए इस्लामाबाद लाने के लिए पाकिस्तान ने ये फाइटर जेट भेजे हैं.",
+    "account_handle": "@india_2550",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "इस पोस्ट में इस यूजर्स ने कहा है की नेहरू ने पत्नी कमला के साथ बड़ा ही दुर्भाग्यपूर्ण व्यवहार किया और उन्हें परदेस में अकेले मरने के लिए छोड़ दिया",
+    "account_handle": "@mumbai_6510",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "माँ……बहु : इन्होंने अपनी लाइफ जी ली अब हमको अपनी लाइफ जीनी है ।सास : हमको\nअपने घर रहना है हमे जबरदस्ती आश्रम भेज रहे हैं",
+    "account_handle": "Viral Updates 15 (@mumbai_3958)",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "गाजियाबाद डासना फैक्ट्री में ब्लास्ट अभी तक 40 लोगों की मौत हुई ,भगवान इन सभी की आत्मा को शांति दे।“",
+    "account_handle": "@khabar_9597",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "अब तो जम्मू कश्मीर में भी मोदी मोदी गाने पर काश्मीरी झूम रहें हैं। ऐसे ही नहीं विकास बोलता है भाई kashmir Muslim.",
+    "account_handle": "@sach_1449",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "उज्जैन की एक महिला ने 45 साल पहले एक सुनार की दुकान से सोने का हार चुराया था. जब उसने AI से 80s के ट्रेंड वाली फोटो बनाकर शेयर की, तो सुनार ने उसे पहचान लिया और वो पकड़ी गई.",
+    "account_handle": "Viral Updates 18 (@khabar_9718)",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "SORRY नाम की यह फिल्म – सिर्फ 4 मिनट 17 सेकंड की फिल्म है और इसे 30 मिनट में बनाया गया था। लेकिन इसे ऑस्कर अवार्ड मिला।",
+    "account_handle": "Viral Updates 19 (@india_4081)",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "This video of two women fighting among themselves is from a recent incident in a government school in Rajasthan.",
+    "account_handle": "@india_6195",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "गंगा रिसॉर्ट के पास साधु के वेश में एक मुस्लिम मौलाना पकड़ा गया, जो बच्चियों को फंसाने की फिराक में था।",
+    "account_handle": "Viral Updates 21 @news_1748",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "काफ़ी दर्द हुआ सुनकर लाल सिंह चड्ढा सुपर फ्लोप हो गई आमिर खान ने खुद स्वीकार किया। यह सब सभी सनातनियो की एकता का कमाल है।",
+    "account_handle": "Viral Updates 22 (@mumbai_8852)",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "डियो राजस्थान की बताई जा रही है जहां भैरों बाबा के मंदिर को तोड़कर मूर्ति को ट्रैक्टर से घसीटते हुए ले जाया जा रहा है...",
+    "account_handle": "@news_3188",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "एका व्यक्तीने त्याच्या पाठीवर उद्धव आणि आदित्य ठाकरे यांचा टॅटू काढले आहेत आणि त्याच्या खालच्या भागावर संजय राऊत यांचा टॅटू असल्याचा दावा करण्यात आला आहे.",
+    "account_handle": "@khabar_1599",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "शपथविधी सोहळ्यात नितीन गडकरी यांनी नरेंद्र मोदी यांना अभिवादन न केल्याचा फोटो\nसोशल मीडियावर व्हायरल.",
+    "account_handle": "@mumbai_454",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "व्हायरल व्हिडिओमध्ये मुख्यमंत्री एकनाथ शिंदे हे अहमदपूर-चाकूर मतदारसंघातील जनसुराज्य शक्ती पक्षाचे उमेदवार गणेश हाके यांच्या शिट्टी या चिन्हाला मतदान करण्याचं आवाहन करताना दिसत आहेत.",
+    "account_handle": "@news_7951",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "तो लष्करी अधिकाऱ्याचा मुलगा आहे ज्याच्या वडिलांचा अतिरेक्यांविरुद्धच्या कारवाईत मृत्यू झाला. ही बातमी कळताच त्याच्या आईचा धक्का बसून मृत्यू झाला. तो बोर्डिंग आर्मी पब्लिक स्कूलमध्ये शिकत आहे.",
+    "account_handle": "Viral Updates 27 (@news_9016)",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "PM नरेंद्र मोदींच्या रॅलीत एक व्यक्ती हेलिकॉप्टरला पकडून हवेत लटकल्याचा व्हिडिओ व्हायरल होत आहे.",
+    "account_handle": "@sach_1246",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "एका रहिवासी सोसायटीतून रामनामाचा जयघोष व मतदानाचे आवाहन हे महाराष्ट्र\nनिवडणुकीच्या प्रचारात करण्यात आला दावा केला गेला आहे",
+    "account_handle": "@sach_5839",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "राहुल गांधी म्हणतात की, मी अशी एक मशिन लावणार जी एका बाजूने बटाटे टाकले की,\nदुसऱ्या बाजूला सोने बनून बाहेर पडेल.",
+    "account_handle": "Viral Updates 30 (@mumbai_7753)",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "मला गर्व आहे मुस्लिम समाजामुळे माझे खासदार निवडून आलो. मी माझ्या भाषणात हिंदू उल्लेख बंद केला म्हणून भाजपला मिर्च्या झोंबल्या. हिंदूंच्या मतांची आता मला तितकीशी गरज भासणार नाही. मुस्लिम मतांवर विधानसभा पण जिंकून दाखवतो.",
+    "account_handle": "@khabar_3366",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "लोकसभा निवडणुकीच्या पाचव्या टप्प्यानंतर सरसंघचालक मोहन भागवत यांनी भारताच्या स्वातंत्र्यालढ्यातील काँग्रेसच्या भूमिकेचे कौतुक केले.",
+    "account_handle": "@khabar_9435",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "आयसीसी चॅम्पियन्स ट्रॉफीमध्ये भारत विरुद्ध पाकिस्तानच्या झालेल्या सामन्यात चाहते बाबर\nआझमला ट्रोल करत असल्याचा व्हिडिओ व्हायरल.",
+    "account_handle": "Viral Updates 33 (@news_2692)",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "केस कापून झाल्यावर डोक्याचा पाठीचा मसाज करून झाल्यावर मान वाजवताना मेंदूला रक्त पुरवठा करणारी नस दबल्याने ब्रेन स्ट्रोक आल्याने मृत्यु.",
+    "account_handle": "@sach_2020",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "गुजरात : अदानीच्या बंदरात हजारो गायी ट्रकमध्ये उभ्या आहेत. अरब देशांमध्ये जाण्यासाठी.",
+    "account_handle": "@india_316",
+    "post_date": "5d",
+    "image_description": ""
+   }
+  ]
+ },
+ "openai/gpt-6-sol": {
+  "score": {
+   "n": 36,
+   "errors": 0,
+   "post_text CER (lower=better)": 0.014,
+   "post_text exact": 0.5833,
+   "handle exact": 0.7778,
+   "date exact": 1.0,
+   "reply leaked into post_text": 0.0278,
+   "not transcribed (translated)": 0.0,
+   "CER en": 0.0007,
+   "CER hi": 0.033,
+   "CER mr": 0.0084
+  },
+  "usd": 0.0979,
+  "raw": [
+   {
+    "post_text": "The video shows the demolition of a mosque on the grounds of\nfinding posters bearing 'I love Mohammed' from the mosque.",
+    "account_handle": "@india_9152",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video of Cockroach Janta Party (CJP) founder Abhijeet Dipke meeting\nJharkhand Congress president Keshav Mahto Kamlesh.",
+    "account_handle": "Viral Updates 1",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video shows illegal Bangladeshi immigrants leaving India for\nBangladesh after the Suvendu Adhikari government warned that\nillegal migrants would be sent to detention camps.",
+    "account_handle": "@news_6634",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "This video shows Hasan Shahadat, the main culprit in the mob\nlynching of Dipu Das in Bangladesh, dying after being electrocuted.",
+    "account_handle": "@khabar_5558",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows the collision between a Pakistani naval vessel and\nan Indian Navy warship on 15 September 2026.",
+    "account_handle": "@news_3230",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows Gen-Z protesters in Delhi in September 2026\ndemanding the removal of EVMs and the resignation of CEC Gyanesh\nKumar.",
+    "account_handle": "@india_8996",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows an Australian man working at a brick kiln after his\npassport and belongings were stolen in Agra.",
+    "account_handle": "@sach_8422",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "Video showing the body of a Bangladeshi infiltrator allegedly killed\nby the BSF along the Tripura border in June 2026.",
+    "account_handle": "@mumbai_4869",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows visuals from the ‘Reservation Hatao Andolan’ held at\nJantar Mantar, Delhi, on 21 August 2026.",
+    "account_handle": "@sach_8952",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "Kolkata's Suhrawardy Avenue was named to honour Huseyn\nShaheed Suhrawardy, who is responsible for the Great Calcutta\nKillings of 1946.",
+    "account_handle": "@mumbai_4812",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "Following a Quran-burning incident in Sweden, Kuwait and Qatar\nannounced the expulsion of all Swedish people from the countries.",
+    "account_handle": "@khabar_5294",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "The video shows former Bihar Chief Minister Nitish Kumar\ncommenting on the police action in the Bharat Bhushan Tiwari\nencounter case.",
+    "account_handle": "@india_3202",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "यूपी पुलिस की परीक्षा में सेलेक्शन न होने के लिए आरक्षण को दोष देने वाली कांवड़ गर्ल\nमानसी राजपूत दसवीं क्लास में फेल हो गई थीं.",
+    "account_handle": "@sach_7907",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "ईरान के डेलिगेशन को अमेरिका से बातचीत के लिए इस्लामाबाद लाने के लिए पाकिस्तान ने ये फाइटर जेट भेजे हैं.",
+    "account_handle": "Viral Updates 13",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "इस पोस्ट में इस यूजर्स ने कहा है की नेहरू ने पत्नी कमला के साथ बड़ा ही दुर्भाग्यपूर्ण व्यवहार किया और उन्हें परदेश में अकेले मरने के लिए छोड़ दिया",
+    "account_handle": "@mumbai_6510",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "माँ.....बहू : इन्होंने अपनी लाइफ जी ली अब हमको अपनी लाइफ जीनी है ।सास : हमको\nअपने घर रहना है हम जबरदस्ती आश्रम भेज रहे हैं",
+    "account_handle": "Viral Updates 15",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "गाजियाबाद डासना फैक्ट्री में ब्लास्ट अभी तक 40 लोगों की मौत हुई ,भगवान इन सभी की\nआत्मा को शांति दे।“",
+    "account_handle": "@khabar_9597",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "अब तो जम्मू कश्मीर में भी मोदी मोदी गाने पर कश्मीरी झूम रहे हैं। ऐसे ही नहीं विकास बोलता\nहै भाई kashmir Muslim.",
+    "account_handle": "@sach_1449",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "उज्जैन की एक महिला ने 45 साल पहले एक सुनार की दुकान से सोने का हार चुराया था, जब उसने AI से 80s के ट्रेंड वाली फोटो बनाकर शेयर की, तो सुनार ने उसे पहचान लिया और वो पकड़ी गई.\n\nReader यह खबर झूठी है, कृपया जांच करें।",
+    "account_handle": "@khabar_9718",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "SORRY नाम की यह फिल्म - सिर्फ 4 मिनट 17 सेकंड की फिल्म है और इसे 30 मिनट में\nबनाया गया था। लेकिन इसे ऑस्कर अवार्ड मिला।",
+    "account_handle": "@india_4081",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "This video of two women fighting among themselves is from a recent\nincident in a government school in Rajasthan.",
+    "account_handle": "@india_6195",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "गंगा रिसॉर्ट के पास साधु के वेश में एक मुस्लिम मौलाना पकड़ा गया, जो बच्चियों को फंसाने की फिराक में था.",
+    "account_handle": "@news_1748",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "काफी दर्द हुआ सुनकर लाल सिंह चड्ढा सुपर फ्लॉप हो गई आमिर खान ने खुद स्वीकार किया।\nयह सब सभी सनातनियों की एकता का कमाल है।",
+    "account_handle": "Viral Updates 22",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "विडियो राजस्थान की बताई जा रही है जहां भैरों बाबा के मंदिर को तोड़कर मूर्ति को ट्रैक्टर से\nघसीटते हुए ले जाया जा रहा है...",
+    "account_handle": "@news_3188",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "एका व्यक्तीने त्याच्या पाठीवर उद्धव आणि आदित्य ठाकरे यांचा टॅटू काढले आहेत आणि\nत्याच्या खालच्या भागावर संजय राऊत यांचा टॅटू असल्याचा दावा करण्यात आला आहे.",
+    "account_handle": "Viral Updates 24",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "शपथविधी सोहळ्यात नवीन गडकरी यांनी नरेंद्र मोदी यांना अभिवादन न केल्याचा फोटो सोशल मीडियावर व्हायरल.",
+    "account_handle": "@mumbai_454",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "व्हायरल व्हिडिओमध्ये मुख्यमंत्री एकनाथ शिंदे हे अहमदपूर-चाकूर मतदारसंघातील जनसुराज्य\nशक्ती पक्षाचे उमेदवार गणेश हाके यांच्या शिंदे या चिन्हाला मतदान करण्याचं आवाहन\nकरताना दिसत आहेत.",
+    "account_handle": "Viral Updates 26",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "तो लष्करी अधिकाऱ्याचा मुलगा आहे ज्याच्या वडिलांचा अतिरेक्यांविरुद्धच्या कारवाईत मृत्यू झाला. ही बातमी कळताच त्याच्या आईचा धक्का बसून मृत्यू झाला. तो बोर्डिंग आर्मी पब्लिक स्कूलमध्ये शिकत आहे.",
+    "account_handle": "Viral Updates 27",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "PM नरेंद्र मोदींच्या रॅलीत एक व्यक्ती हेलिकॉप्टरला पकडून हवेत लटकल्याचा व्हिडिओ\nव्हायरल होत आहे.",
+    "account_handle": "@sach_1246",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "एका रहिवासी सोसायटीतून रामनामाचा जयघोष व मतदानाचे आवाहन हे महाराष्ट्र निवडणुकीच्या प्रचारात करण्यात आला दावा केला गेला आहे",
+    "account_handle": "@sach_5839",
+    "post_date": "5d",
+    "image_description": ""
+   },
+   {
+    "post_text": "राहुल गांधी म्हणतात की, मी अशी एक मशीन लावणार जी एका बाजूने बटाटे टाकले की,\nदुसऱ्या बाजूला सोने बनून बाहेर पडेल.",
+    "account_handle": "@mumbai_7753",
+    "post_date": "3 March",
+    "image_description": ""
+   },
+   {
+    "post_text": "मला गर्व आहे मुस्लिम समाजामुळे माझे खासदार निवडून आले. मी माझ्या भाषणात हिंदू उल्लेख बंद केला म्हणून भाजपला मिरची झोंबल्या. हिंदूच्या मतांची आता मला तितकीशी गरज भासणार नाही. मुस्लिम मतांवर विधानसभा पण जिंकून दाखवतो.",
+    "account_handle": "Viral Updates 31\n@khabar_3366",
+    "post_date": "12/09/2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "लोकसभा निवडणुकीच्या पाचव्या टप्प्यानंतर सरसंघचालक मोहन भागवत यांनी भारताच्या\nस्वातंत्र्यलढ्यातील काँग्रेसच्या भूमिकेचे कौतुक केले.",
+    "account_handle": "@khabar_9435",
+    "post_date": "2h",
+    "image_description": ""
+   },
+   {
+    "post_text": "आयसीसी चॅम्पियन्स ट्रॉफीमध्ये भारत विरुद्ध पाकिस्तानच्या झालेल्या सामन्यात चाहते बाबर आझमला ट्रोल करत असल्याचा व्हिडिओ व्हायरल.",
+    "account_handle": "@news_2692",
+    "post_date": "Yesterday at 9:41 PM",
+    "image_description": ""
+   },
+   {
+    "post_text": "केस कापून झाल्यावर डोक्याचा पाठीचा मसाज करून झाल्यावर मान वाजवताना मेंदूला रक्त\nपुरवठा करणारी नस दबल्याने ब्रेन स्ट्रोक आल्याने मृत्यू.",
+    "account_handle": "@sach_2020",
+    "post_date": "14 Aug 2026",
+    "image_description": ""
+   },
+   {
+    "post_text": "गुजरात : अदानीच्या बंदरात हजारो गायी ट्रकमध्ये उभ्या आहेत, अरब देशांमध्ये जाण्यासाठी.",
+    "account_handle": "@india_316",
+    "post_date": "5d",
+    "image_description": ""
+   }
+  ]
+ }
+}
