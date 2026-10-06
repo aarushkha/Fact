@@ -138,10 +138,9 @@ class Runtime:
             for name in clear:
                 new.pop(name, None)
             new.update(clean_overrides(values))
-            await self._apply(new)
-            await self.overrides_store.save(new)
+            await self._apply(new, persist=True)
 
-    async def _apply(self, overrides: dict[str, Any]) -> None:
+    async def _apply(self, overrides: dict[str, Any], *, persist: bool = False) -> None:
         s = merge_settings(self.base, overrides)
         problems = check_readiness(s).errors
         if problems:
@@ -154,5 +153,8 @@ class Runtime:
         except Exception as exc:
             log.exception("settings rejected")
             raise SettingsInvalid({"": f"{type(exc).__name__}: {exc}"}) from exc
+        # A failed save must leave the running pipeline and authentication unchanged.
+        if persist:
+            await self.overrides_store.save(overrides)
         self.overrides = dict(overrides)
         self.install(built)

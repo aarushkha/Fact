@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -205,6 +206,8 @@ class Readiness:
 
 def check_readiness(s: Settings) -> Readiness:
     r = Readiness()
+    if s.log_level not in logging.getLevelNamesMapping():
+        r.errors.append("Invalid log level (LOG_LEVEL): use a registered logging level name.")
     if s.mock_mode:
         return r
     if not s.database_url:

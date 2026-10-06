@@ -39,8 +39,10 @@ Copy-Item .env.example .env
 Run all commands below from the `Fact` repository root. Edit `.env` in a text editor; the app
 loads it automatically. **Do not run `source .env`**: it is a dotenv file, and some values contain
 spaces and parentheses that are not shell syntax. Variables already set in your terminal override
-`.env`. Restart the app after changing configuration; for Docker, rerun `docker compose up -d app`
-to recreate the container with the new values.
+`.env`. Values saved on the [settings page](#settings-page-no-env-editing-no-docker-restarts) override
+both; use the field’s revert button and save to return to the environment value. Restart the app after
+editing `.env`; for Docker, rerun `docker compose up -d app` to recreate the container.
+Changes saved on the settings page apply immediately without a restart.
 
 ### 2A. Python: offline demo without a database
 
@@ -167,18 +169,29 @@ API documentation is at <http://localhost:8000/docs>.
 
 Open `/settings` to switch between mock and real mode, enter the API keys, pick providers and models, tune the
 thresholds, API protection and worker/crawler options. **Save and apply** takes effect immediately in the API and
-within ~30 s in the worker; already loaded models are kept. A change that cannot work (real mode without keys, or
-without the models installed) is refused with the reason and the running configuration stays as it was.
+on the worker’s next settings poll (normally within ~30 s when idle); already loaded models are kept.
+A change that cannot work (real mode without keys, or without the models installed) is refused with
+the reason and the running configuration stays as it was.
 
 - Precedence: value saved on the page > `.env` / environment > default. Each field shows where its value comes from,
   with a button to revert it. Changes are stored in the `settings_overrides` table (or `SETTINGS_OVERRIDES_FILE`
-  without a database). API keys are stored in plain text, like in `.env`, and are never sent back to the browser.
+  without a database). With neither configured, changes are held in memory and lost on restart. For the
+  Python-only demo, set `SETTINGS_OVERRIDES_FILE=.settings-overrides.json` in `.env` before startup to keep
+  them across restarts. API keys are stored in plain text, like in `.env`, and are never sent back to the browser.
 - Who may open it: `ADMIN_TOKEN` if set (always from the environment wins), else any API key from `API_KEYS`, else
   anyone who can reach the server. **Set an admin token before exposing the server**; you can do it on the page.
 - Not editable there (change `.env` and restart): `DATABASE_URL`, `SOURCES_FILE`, provider base URLs, embedder/NLI model
   pins and `EMBEDDING_DIM`, Docker-level choices (ports, `INSTALL_MODELS` build arg, the `models` profile). Real mode
   needs the image built with `INSTALL_MODELS=true` (or a running models service whose URL you enter on the page).
-- The separate models service (`app.model_server`) and the `crawler.run` CLI still read only the environment.
+- With multiple API processes or replicas, a save updates the process handling that request. If they
+  share a database or the same `SETTINGS_OVERRIDES_FILE`, restart the other API processes to load the
+  saved values. Without shared storage, apply the same settings directly to each replica. For separate
+  override files, you can instead copy the saved file to each replica’s configured path and restart it;
+  memory-only changes must be reapplied to each process after a restart. The background worker polls
+  the shared database.
+- The separate models service (`app.model_server`), `crawler.run`, `app.db.seed` and evaluation commands
+  still read only the environment / `.env`. Keys or mode changes saved on the page do not configure these
+  commands; keep their `.env` configuration in sync when following the real-mode steps below.
 
 ## MOCK_MODE
 
@@ -272,7 +285,8 @@ models and quotas; the values in `.env.example` are configuration defaults.
 `/api/check*` and `/api/checks/*`; the test page shows a key field when a key is required.
 `RATE_LIMIT_PER_MINUTE` limits checks per key (or per IP when auth is off). With `DATABASE_URL` set the
 limiter lives in Postgres (`rate_limit_hits`), so all API workers share one budget per client; without a
-database it is in-memory and per process. API keys come from the environment, so every worker shares them.
+database it is in-memory and per process. API keys can come from the environment or the settings page;
+see the settings-page note above when running multiple API processes.
 
 ## Background worker, rechecks, monitoring, model server
 
