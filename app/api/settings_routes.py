@@ -21,7 +21,7 @@ class SettingsUpdate(BaseModel):
 def _state(request: Request) -> dict:
     rt = request.app.state.runtime
     s = request.app.state.settings
-    if rt.base.admin_token:
+    if s.admin_token:
         auth = "admin_token"
     elif request.app.state.api_keys:
         auth = "api_key"

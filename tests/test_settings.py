@@ -171,9 +171,11 @@ def test_auth_modes():
 
 def test_setting_an_admin_token_from_an_open_server_locks_it():
     c = make()
-    assert c.put("/api/settings", json={"values": {"admin_token": "first-token"}}).status_code == 200
+    saved = c.put("/api/settings", json={"values": {"admin_token": "first-token"}})
+    assert saved.status_code == 200
+    assert saved.json()["auth"] == "admin_token"
     assert c.get("/api/settings").status_code == 401
-    assert c.get("/api/settings", headers={"X-Admin-Token": "first-token"}).status_code == 200
+    assert c.get("/api/settings", headers={"X-Admin-Token": "first-token"}).json()["auth"] == "admin_token"
 
 
 def test_overrides_persist_in_a_file_across_apps(tmp_path):
@@ -238,3 +240,22 @@ async def test_db_overrides_roundtrip():
 
 async def test_file_overrides_missing_file(tmp_path):
     assert await FileOverrides(tmp_path / "none.json").load() == {}
+
+
+def test_failed_persistence_keeps_running_settings_and_auth(monkeypatch):
+    c = make()
+    rt = c.app.state.runtime
+    pipeline = c.app.state.pipeline
+
+    async def fail_save(values):
+        raise OSError("disk is full")
+
+    monkeypatch.setattr(rt.overrides_store, "save", fail_save)
+    with pytest.raises(OSError, match="disk is full"):
+        c.put("/api/settings", json={"values": {"confidence_threshold": 0.9, "admin_token": "unsaved-token"}})
+
+    assert c.app.state.pipeline is pipeline
+    assert rt.current.confidence_threshold == 0.6
+    assert rt.overrides == {}
+    assert c.get("/api/settings").json()["auth"] == "open"
+    assert c.post("/api/check", data={"text": "Mumbai airport is closed for a week."}).status_code == 200
