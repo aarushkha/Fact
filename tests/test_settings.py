@@ -1,5 +1,6 @@
 """The settings page API: validation, hot reload, secrets, auth, persistence."""
 
+import logging
 import os
 
 import pytest
@@ -259,3 +260,58 @@ def test_failed_persistence_keeps_running_settings_and_auth(monkeypatch):
     assert rt.overrides == {}
     assert c.get("/api/settings").json()["auth"] == "open"
     assert c.post("/api/check", data={"text": "Mumbai airport is closed for a week."}).status_code == 200
+
+
+def test_invalid_effective_log_level_does_not_save_or_install(tmp_path):
+    path = tmp_path / "overrides.json"
+    with make(base(settings_overrides_file=str(path))) as c:
+        rt = c.app.state.runtime
+        assert c.put("/api/settings", json={"values": {"log_level": "INFO"}}).status_code == 200
+        # Exercise reverting an override to an invalid base value, bypassing submitted-field validation.
+        rt.base = rt.base.model_copy(update={"log_level": "INVALID"})
+        old_settings = c.app.state.settings
+        old_pipeline = c.app.state.pipeline
+        old_limiter = c.app.state.rate_limiter
+        old_overrides = dict(rt.overrides)
+        old_saved = path.read_bytes()
+        old_level = logging.getLogger().level
+        response = c.put("/api/settings", json={
+            "clear": ["log_level"],
+            "values": {"confidence_threshold": 0.9, "api_keys": "new-key", "admin_token": "new-admin",
+                       "rate_limit_per_minute": 2},
+        })
+        assert response.status_code == 422, response.text
+        assert "log level" in response.json()["detail"]["errors"][""].lower()
+        assert path.read_bytes() == old_saved
+        assert rt.overrides == old_overrides
+        assert c.app.state.settings is old_settings
+        assert c.app.state.pipeline is old_pipeline
+        assert c.app.state.rate_limiter is old_limiter
+        assert c.app.state.api_keys == []
+        assert c.app.state.admin_token == ""
+        assert logging.getLogger().level == old_level
+        assert c.post("/api/check", data={"text": "Mumbai airport is closed for a week."}).status_code == 200
+        # A valid override can still mask the invalid base and be saved and installed.
+        try:
+            valid = c.put("/api/settings", json={"values": {"log_level": "WARNING"}})
+            assert valid.status_code == 200
+            assert field(valid.json(), "log_level")["value"] == "WARNING"
+            assert logging.getLogger().level == logging.WARNING
+        finally:
+            logging.getLogger().setLevel(old_level)
+
+
+def test_invalid_saved_log_level_does_not_partially_apply_on_startup(tmp_path):
+    path = tmp_path / "overrides.json"
+    path.write_text('{"log_level": "INVALID", "confidence_threshold": 0.9, "admin_token": "bad-saved-token"}')
+    with make(base(settings_overrides_file=str(path))) as c:
+        state = c.get("/api/settings")
+        assert state.status_code == 200
+        assert field(state.json(), "confidence_threshold")["value"] == 0.6
+        assert c.app.state.runtime.overrides == {}
+        assert c.app.state.admin_token == ""
+
+
+@pytest.mark.parametrize("level", ["INFO", "WARNING", "WARN", "CRITICAL", "FATAL", "NOTSET"])
+def test_readiness_accepts_valid_logging_levels(level):
+    assert check_readiness(base(log_level=level)).errors == []

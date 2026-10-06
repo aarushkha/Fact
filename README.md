@@ -183,8 +183,12 @@ the reason and the running configuration stays as it was.
 - Not editable there (change `.env` and restart): `DATABASE_URL`, `SOURCES_FILE`, provider base URLs, embedder/NLI model
   pins and `EMBEDDING_DIM`, Docker-level choices (ports, `INSTALL_MODELS` build arg, the `models` profile). Real mode
   needs the image built with `INSTALL_MODELS=true` (or a running models service whose URL you enter on the page).
-- With multiple API processes or replicas, a save updates the process handling that request. Restart
-  the other API processes to load the persisted values. The background worker polls the shared database.
+- With multiple API processes or replicas, a save updates the process handling that request. If they
+  share a database or the same `SETTINGS_OVERRIDES_FILE`, restart the other API processes to load the
+  saved values. Without shared storage, apply the same settings directly to each replica. For separate
+  override files, you can instead copy the saved file to each replica’s configured path and restart it;
+  memory-only changes must be reapplied to each process after a restart. The background worker polls
+  the shared database.
 - The separate models service (`app.model_server`), `crawler.run`, `app.db.seed` and evaluation commands
   still read only the environment / `.env`. Keys or mode changes saved on the page do not configure these
   commands; keep their `.env` configuration in sync when following the real-mode steps below.
