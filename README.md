@@ -9,22 +9,159 @@ Statuses: `CONFIRMED`, `CONTRADICTED`, `MISLEADING_CONTEXT`, `UNVERIFIED_TOO_EAR
 
 ## Setup
 
-Needs git plus Docker **or** Python 3.11+.
+Choose **Python** for a quick offline demo, or **Docker** for the app with persistent Postgres
+storage. Both start in mock mode and need no API keys. Downloads during installation need internet
+access; the installed mock app runs offline.
 
-```bash
-git clone https://github.com/aarushkha/Fact.git && cd Fact
+### 1. Get the source and configuration
+
+Install Git, then run:
+
+```sh
+git clone https://github.com/aarushkha/Fact.git
+cd Fact
+```
+
+Create `.env` once (keep an existing file if you have already configured it):
+
+**macOS / Linux / Bash:**
+
+```sh
 cp .env.example .env
 ```
 
-| How | Command | Then open |
-|---|---|---|
-| Docker: app + Postgres | `docker compose up --build` | http://localhost:8000/ |
-| Python only, in-memory, mock search | `pip install -e '.[dev]'` then `uvicorn app.main:app --reload` | http://localhost:8000/ |
-| Python app + Docker Postgres | `docker compose up -d db`, set `DATABASE_URL=postgresql+asyncpg://fact:fact@localhost:5432/fact`, run uvicorn | http://localhost:8000/ |
+**Windows PowerShell:**
 
-The test page lets you paste text or upload a screenshot (with an optional post date). It streams
-events live and shows claim cards (status, confidence, cited sentences, expected-evidence checklist),
-plus a raw-JSON toggle and the model versions.
+```powershell
+Copy-Item .env.example .env
+```
+
+Run all commands below from the `Fact` repository root. Edit `.env` in a text editor; the app
+loads it automatically. **Do not run `source .env`**: it is a dotenv file, and some values contain
+spaces and parentheses that are not shell syntax. Variables already set in your terminal override
+`.env`. Restart the app after changing configuration; for Docker, rerun `docker compose up -d app`
+to recreate the container with the new values.
+
+### 2A. Python: offline demo without a database
+
+Install **Python 3.11 or newer** with pip and venv support. Create and activate a virtual environment
+so installation and startup use the same interpreter.
+
+**macOS / Linux / Bash** (use your installed Python 3.11+ executable if it has a different name):
+
+```sh
+python3 --version
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**Windows PowerShell** (with Python 3.11 installed via the Python launcher):
+
+```powershell
+py -3.11 --version
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Then, in either shell:
+
+```sh
+python -m pip install -e '.[dev]'
+python -m uvicorn app.main:app --reload
+```
+
+Keep these defaults in `.env` for this route:
+
+```dotenv
+MOCK_MODE=true
+DATABASE_URL=
+SEARCH_BACKEND=auto
+```
+
+Leave the server running and open <http://localhost:8000/>. Stop it with Ctrl+C. Data is held in
+memory and lost when the server restarts. In a new terminal, activate `.venv` again before running
+Python commands.
+
+### 2B. Docker: app and Postgres
+
+Install Docker Engine or Docker Desktop and start it. Use **Docker Compose 2.24.0 or newer**;
+the compose file uses [optional `env_file` support](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/).
+Install the Docker Buildx plugin along with Compose (Docker Desktop includes both).
+Host Python is not needed for this route.
+
+```sh
+docker compose version
+docker buildx version
+docker compose config --quiet
+docker compose up -d --build --wait db app
+docker compose logs -f app
+```
+
+Open <http://localhost:8000/> once the logs show application startup is complete. Ctrl+C stops
+following logs; the containers keep running. The app migrates the database and seeds the fictional
+corpus automatically in mock mode. Compose supplies the database URL using the hostname `db`.
+
+```sh
+docker compose down
+```
+
+This stops the containers and keeps database/model-cache volumes for the next run.
+
+### 2C. Python app with Docker Postgres
+
+Complete the Python environment and dependency installation in **2A**, and install Docker as in
+**2B**. Stop any app already using port 8000, then start just the database:
+
+```sh
+docker compose up -d --wait db
+```
+
+Edit the existing settings in `.env`:
+
+```dotenv
+MOCK_MODE=true
+DATABASE_URL=postgresql+asyncpg://fact:fact@localhost:5432/fact
+SEARCH_BACKEND=auto
+```
+
+Start the local app from the activated virtual environment:
+
+```sh
+python -m uvicorn app.main:app --reload
+```
+
+Use `localhost` for Python running on your machine and `db` for processes inside Compose. The
+included database is Postgres 16 **with pgvector**; a plain Postgres installation needs the vector
+extension installed separately. The app runs migrations and seeds mock data on startup.
+
+### 3. Check that it works
+
+Open <http://localhost:8000/api/health>; it should return `ok: true` and `mock_mode: true` for
+the default setup. On <http://localhost:8000/>, submit:
+
+```text
+Mumbai airport is closed for a week.
+```
+
+Expect `CONTRADICTED` from the fictional demo corpus. The test page also accepts screenshots and an
+optional post date, streams events, and displays claim cards, citations and raw JSON. Interactive
+API documentation is at <http://localhost:8000/docs>.
+
+### Installation troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Python version error, or `No module named uvicorn` | Confirm Python is 3.11+, activate `.venv`, and rerun `python -m pip install -e '.[dev]'`. |
+| `externally-managed-environment` from pip | Create and use the virtual environment in 2A. |
+| PowerShell blocks `Activate.ps1` | Activation is optional: use `.\.venv\Scripts\python.exe -m pip install -e '.[dev]'` and `.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload`. |
+| Syntax errors around `VAR=value command` or `source` | Those are Bash commands. Edit settings in `.env`, and use the PowerShell setup block on Windows. |
+| Compose rejects `env_file` / `required` | Upgrade to Docker Compose 2.24.0+ and use `docker compose` (with a space). |
+| Compose says `build requires buildx` | Install or update Docker Buildx to the version requested by your Compose release. |
+| Cannot connect to the Docker daemon | Start Docker Engine / Docker Desktop, then retry. |
+| Database connection refused | For the Python-only demo, leave `DATABASE_URL` empty. For persistence, start `db` and use the URL from 2C. |
+| Port 8000 or 5432 is already allocated | Stop the conflicting local service or container before starting this setup. |
+| Real mode says the mock corpus is unavailable | Real mode needs a pgvector database and `SEARCH_BACKEND=auto` (or `postgres`); follow the real-mode steps below. |
+| Crawler prints no URLs in mock mode | The mock whitelist has no live feeds. Configure real mode and `SOURCES_FILE=sources.yaml` before crawling. |
 
 ## MOCK_MODE
 
@@ -42,16 +179,60 @@ and runs fully offline. Try these:
 
 ## Real mode (MOCK_MODE=false)
 
-1. Install the self-hosted models (about 3 GB of weights, downloaded on first use):
-   `pip install --index-url https://download.pytorch.org/whl/cpu torch && pip install -e '.[models]'`.
-   With Docker: `INSTALL_MODELS=true docker compose up --build`.
-2. Put the keys in `.env`: `GEMINI_API_KEY`, `SARVAM_API_KEY`, `OPENROUTER_API_KEY` (for Jev) and
-   `GOOGLE_FACTCHECK_API_KEY`. Also set `MOCK_MODE=false` and `DATABASE_URL`.
-3. Fill `sources.yaml` and run the crawler (below). Until then, every claim is UNVERIFIED.
-   To try real models first on the fictional corpus, set `SOURCES_FILE=app/adapters/mock_data/sources.yaml`
-   and run `python -m app.db.seed`.
+Real mode needs a **pgvector database**, provider credentials, internet access and the optional
+model dependencies (about 3 GB of weights downloaded on first use). Start with setup **2B** or
+**2C** above, and stop the app while changing modes.
 
-| Adapter | Real implementation (written from the provider's docs, verified live) |
+1. Install the models in your activated Python environment. The CPU-only torch command below is
+   for Linux/Windows; on macOS, install torch from the default index with `python -m pip install torch`.
+
+   ```sh
+   python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+   python -m pip install -e '.[models]'
+   ```
+
+   For Docker, add `INSTALL_MODELS=true` to `.env` instead. Compose uses it as a build argument;
+   you must rebuild the image after changing it.
+
+2. Edit `.env`: set `MOCK_MODE=false`, `SEARCH_BACKEND=auto` and `SOURCES_FILE=sources.yaml`.
+   Fill `GEMINI_API_KEY`, `SARVAM_API_KEY`, `OPENROUTER_API_KEY` (for Jev) and
+   `GOOGLE_FACTCHECK_API_KEY`. For a local Python process, set `DATABASE_URL` as in **2C**;
+   Compose supplies its own database URL. Keep `WEB_SEARCH_ENABLED=false` (no implementation yet).
+   Provider model names and account access must also match your provider configuration.
+
+3. Build the Docker image if using containers:
+
+   ```sh
+   docker compose build app
+   docker compose up -d --wait db
+   ```
+
+4. Review the existing entries in `sources.yaml`, then populate the search index. For local Python:
+
+   ```sh
+   python -m crawler.run --source factly.in --limit 20 --since-days 7
+   python -m uvicorn app.main:app --reload
+   ```
+
+   For Docker:
+
+   ```sh
+   docker compose run --rm app python -m crawler.run --source factly.in --limit 20 --since-days 7
+   docker compose up -d app
+   docker compose logs -f app
+   ```
+
+   Run the crawler without `--source`, `--limit` and `--since-days` to crawl all configured sources
+   with the default limits. A claim can remain UNVERIFIED when no relevant evidence is found;
+   filling the index does not guarantee a definitive status.
+
+To try real models on the **fictional** corpus instead, set
+`SOURCES_FILE=app/adapters/mock_data/sources.yaml` while keeping `MOCK_MODE=false` and the database
+configured. Run `python -m app.db.seed` locally, or `docker compose run --rm app python -m app.db.seed`,
+then restart the app. Restore `SOURCES_FILE=sources.yaml` before crawling real sources. Mock and real
+embeddings are model-specific; seeding/crawling must use the mode you intend to run.
+
+| Adapter | Implementation in this repository |
 |---|---|
 | VisionReader, LLM | Gemini Interactions API with JSON-schema output. Overloaded or rate-limited models are skipped and `LLM_FALLBACK_MODELS` is tried. |
 | Translator | Sarvam `/text-lid` + `/translate` (`mayura:v1`). Hinglish is detected as `hi-Latn`. |
@@ -67,8 +248,8 @@ a text check makes **no Gemini calls**:
 - summaries quote the most relevant evidence sentence verbatim, and NLI still verifies each one.
 
 Gemini is then used only to read screenshots and as a fallback (if Jev or Sarvam fails).
-Set both to `llm` for LLM-quality extraction and writing. The Gemini free tier allows
-`gemini-3.8-flash` 5 requests/min and 20/day.
+Set both to `llm` for LLM-based extraction and writing. Check your provider account for available
+models and quotas; the values in `.env.example` are configuration defaults.
 
 **API protection.** Set `API_KEYS` (comma-separated) to require an `X-API-Key` header on
 `/api/check*` and `/api/checks/*`; the test page shows a key field when a key is required.
@@ -78,9 +259,10 @@ database it is in-memory and per process. API keys come from the environment, so
 
 ## Background worker, rechecks, monitoring, model server
 
-- `python -m app.worker` (compose service `worker`) re-runs UNVERIFIED claims whose `recheck_at` has
+- The worker requires `DATABASE_URL`. Start it in another activated terminal with `python -m app.worker`,
+  or with `docker compose up -d --build worker`. It re-runs UNVERIFIED claims whose `recheck_at` has
   passed (TOO_EARLY after 6 h, EVIDENCE_MISSING after 7 days, never past `RECHECK_MAX_AGE_DAYS`) and
-  crawls all sources every `CRAWL_INTERVAL_MINUTES`. A new verdict links `rechecked_from`; the old one
+  crawls all sources every `CRAWL_INTERVAL_MINUTES` in real mode. A new verdict links `rechecked_from`; the old one
   is marked `superseded_at`. Use `--once` for cron.
 - Rumour-cascade signals per claim: repeat submissions in 24 h / 7 d, first seen, supporting passages
   per tier, `echo_only` (only aggregators support it) and `distinct_accounts_7d` (distinct poster handles
@@ -88,9 +270,13 @@ database it is in-memory and per process. API keys come from the environment, so
   in `claims.signals` and sent on the `verdict` event; they never change the status.
 - `GET /api/monitoring?hours=24` and the `/monitor` page show: checks, statuses and abstain rate,
   per-stage latency and errors, models and fallbacks, NLI deletion rate, rechecks and top cascades.
-- Optional model server: `uvicorn app.model_server:app --port 8001` (or
-  `docker compose --profile models up`, which publishes it on 127.0.0.1 only) with `MODEL_SERVER_URL`
-  set. The API and worker then don't load torch. Set `MODEL_SERVER_TOKEN` before exposing it further;
+- Optional model server (requires the model dependencies):
+  `python -m uvicorn app.model_server:app --port 8001`, or
+  `docker compose --profile models up -d --build models` (published on 127.0.0.1 only). Set
+  `MODEL_SERVER_URL=http://localhost:8001` for a local Python app, or
+  `MODEL_SERVER_URL=http://models:8001` for the Compose app/worker. Restart the app and worker
+  after changing the URL. In real mode they then use the model server for embeddings and NLI.
+  Set `MODEL_SERVER_TOKEN` before exposing it further;
   with a token, a public `MODEL_SERVER_URL` must be `https://` (plain HTTP is allowed only to internal hosts).
 - Migrations: Alembic (`app/db/migrations`). The app upgrades to head on startup. After changing
   `app/db/tables.py`, run `alembic revision --autogenerate -m "..."`. CI fails on drift (`alembic check`).
@@ -137,10 +323,15 @@ stored with the right language.
 
 ## Crawler
 
-```bash
-python -m crawler.run --dry-run                 # list what would be fetched
+These commands assume the local Python environment and real-mode configuration above. For Docker,
+replace `python -m crawler.run` with `docker compose run --rm app python -m crawler.run`.
+`--dry-run` still fetches feeds/sitemaps over the network, but does not store articles or require a
+database. A normal crawl requires `DATABASE_URL` and the configured embedder.
+
+```sh
+python -m crawler.run --dry-run                 # fetch feeds/sitemaps and list discovered URLs
 python -m crawler.run                           # all sources (needs DATABASE_URL)
-python -m crawler.run --source example.org --limit 20 --since-days 7
+python -m crawler.run --source factly.in --limit 20 --since-days 7
 python -m crawler.run --reindex                 # also re-extract and re-embed already-stored articles
 ```
 
@@ -157,6 +348,10 @@ full-text (`simple` + `english`) plus pgvector cosine, queried in both the origi
 English, fused with RRF.
 
 ## Evaluation
+
+Run these from the repository root in the local Python environment. For the synthetic mock
+baseline, use `MOCK_MODE=true`, an empty `DATABASE_URL` and `SEARCH_BACKEND=auto` in `.env`.
+The Docker image does not include the `eval/` directory.
 
 ```bash
 python -m eval.run --split tune                               # or hidden | all
@@ -195,13 +390,54 @@ Current results:
 
 ## Tests
 
-```bash
-pytest                                                          # offline: unit + mock end-to-end
-TEST_DATABASE_URL=postgresql+asyncpg://fact:fact@localhost:5432/fact_test pytest   # + Postgres
-RUN_LIVE_TESTS=1 RUN_MODEL_TESTS=1 pytest tests/test_live.py   # real APIs/models (uses .env keys)
+Run from the repository root with the virtual environment and `.[dev]` dependencies from **2A**.
+The standard suite uses mocks; Postgres, live-provider and model tests are opt-in:
+
+```sh
+python -m pytest
 ```
 
-The Postgres tests drop and recreate their tables; point them at a throwaway database.
+For Postgres tests, create a dedicated disposable database first:
+
+```sh
+docker compose up -d --wait db
+docker compose exec db createdb -U fact fact_test
+```
+
+If `fact_test` already exists, reuse it only if it is disposable. The Postgres tests **drop and
+recreate tables**; never point them at a database whose data you want to keep.
+
+**Bash:**
+
+```bash
+TEST_DATABASE_URL=postgresql+asyncpg://fact:fact@localhost:5432/fact_test python -m pytest
+```
+
+**PowerShell:**
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+asyncpg://fact:fact@localhost:5432/fact_test"
+python -m pytest
+Remove-Item Env:TEST_DATABASE_URL
+```
+
+Optional live API/model tests require the real-mode dependencies and provider keys in `.env` and
+may incur provider charges. These flags are read from the **process environment**, not `.env`:
+
+**Bash:**
+
+```bash
+RUN_LIVE_TESTS=1 RUN_MODEL_TESTS=1 python -m pytest tests/test_live.py
+```
+
+**PowerShell:**
+
+```powershell
+$env:RUN_LIVE_TESTS = "1"
+$env:RUN_MODEL_TESTS = "1"
+python -m pytest tests/test_live.py
+Remove-Item Env:RUN_LIVE_TESTS, Env:RUN_MODEL_TESTS
+```
 
 ## TODOs left
 
