@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fact settings</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #5d6677; --border: #d9dde4;
+    --accent: #2f5bd3; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ok: #1d7a46; --bad: #b42318; --warn: #a15c00; --warn-bg: #fff4e0; --bad-bg: #fdecea; --ok-bg: #e7f6ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161b; --panel: #1c1f26; --text: #e6e8ee; --muted: #9aa3b2; --border: #2e333d;
+      --accent: #7a9cff; --ok: #4cc38a; --bad: #ff7b72; --warn: #e3a447; --warn-bg: #2b2414; --bad-bg: #2d1a19; --ok-bg: #14261c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 110px; }
+  nav { display: flex; gap: 14px; font-size: 13px; margin-bottom: 14px; }
+  nav a { color: var(--accent); text-decoration: none; } nav a.here { color: var(--text); font-weight: 600; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 15px; margin: 0 0 2px; }
+  .panel .desc { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .panel.dim .fields { opacity: .55; }
+  .field { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr; gap: 6px 16px; padding: 10px 0; border-top: 1px solid var(--border); align-items: start; }
+  .field:first-of-type { border-top: 0; }
+  @media (max-width: 640px) { .field { grid-template-columns: 1fr; } }
+  .field label { font-weight: 600; font-size: 13px; display: block; }
+  .field .help { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .field .src { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .field .src button { margin: 0 0 0 6px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 6px;
+    border-radius: 999px; border: 1px solid currentColor; }
+  .tag.ui { color: var(--accent); } .tag.env { color: var(--muted); } .tag.default { color: var(--muted); opacity: .7; }
+  input[type=text], input[type=password], input[type=number], select { width: 100%; font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  input.changed, select.changed { border-color: var(--accent); }
+  input.invalid, select.invalid { border-color: var(--bad); }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  .ferr { color: var(--bad); font-size: 12px; margin-top: 4px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 9px 18px; cursor: pointer; background: var(--accent); color: #fff; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); padding: 5px 12px; font-size: 13px; }
+  button.link { background: none; border: 0; color: var(--accent); padding: 0; font-size: 11px; font-weight: 600; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .banner { border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; border: 1px solid currentColor; }
+  .banner.bad { color: var(--bad); background: var(--bad-bg); } .banner.warn { color: var(--warn); background: var(--warn-bg); }
+  .banner.ok { color: var(--ok); background: var(--ok-bg); }
+  .banner ul { margin: 4px 0 0; padding-left: 18px; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 12px; }
+  .mode { text-align: left; background: var(--bg); color: var(--text); border: 2px solid var(--border); padding: 12px 14px; }
+  .mode small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+  .mode.on { border-color: var(--accent); }
+  .mode .now { float: right; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--border); padding: 10px 16px; }
+  #bar .in { max-width: 860px; margin: 0 auto; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  #count { color: var(--muted); font-size: 13px; }
+  #gate input { max-width: 420px; margin: 8px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="/">Test console</a><a href="/monitor">Monitor</a><a href="/settings" class="here">Settings</a></nav>
+  <h1>Settings</h1>
+  <p class="sub">Everything you would otherwise change in <code>.env</code> or docker compose. Changes apply immediately to the API and
+    within about 30 seconds to the worker. No restart.</p>
+
+  <section id="gate" class="panel" hidden>
+    <h2>Unlock</h2>
+    <p class="desc" id="gateMsg">This server needs an admin token (or an API key) to open the settings.</p>
+    <input id="access" type="password" autocomplete="off" placeholder="Admin token or API key">
+    <div><button id="unlock" type="button">Unlock</button></div>
+  </section>
+
+  <div id="banners"></div>
+  <div id="content" hidden>
+    <section class="panel" id="modePanel">
+      <h2>Mode</h2>
+      <p class="desc">Mock mode needs nothing. Real mode calls the providers, so it needs the API keys below (and the models, see the warning if they are missing).</p>
+      <div class="modes">
+        <button type="button" class="mode" id="modeMock">Mock mode<span class="tag now" hidden>running</span><small>Deterministic fake models over a fictional corpus. No keys, no cost.</small></button>
+        <button type="button" class="mode" id="modeReal">Real mode<span class="tag now" hidden>running</span><small>Real providers and models over the crawled corpus.</small></button>
+      </div>
+      <div class="fields" id="modeFields"></div>
+    </section>
+    <div id="groups"></div>
+  </div>
+</main>
+
+<div id="bar" hidden>
+  <div class="in">
+    <span id="count"></span>
+    <span><button id="discard" class="secondary" type="button">Discard</button>
+      <button id="save" type="button" style="margin-left:8px">Save and apply</button></span>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const KEY = "factAdminKey";
+let state = null;                // last response from the server
+const edits = {};                // field -> new value (secrets: the typed text)
+const clears = new Set();        // fields to revert to the .env / default value
+let fieldMeta = {};
+
+const getKey = () => { try { return localStorage.getItem(KEY) || localStorage.getItem("factApiKey") || ""; } catch (e) { return ""; } };
+const setKey = (k) => { try { localStorage.setItem(KEY, k); } catch (e) {} };
+function headers(json) {
+  const h = {}, k = getKey();
+  if (k) { h["X-Admin-Token"] = k; h["X-API-Key"] = k; }
+  if (json) h["Content-Type"] = "application/json";
+  return h;
+}
+
+function el(tag, props = {}, ...kids) {
+  const e = Object.assign(document.createElement(tag), props);
+  kids.flat().forEach(k => e.append(k));
+  return e;
+}
+
+async function load() {
+  const res = await fetch("/api/settings", {headers: headers()});
+  if (res.status === 401) {
+    $("gate").hidden = false; $("content").hidden = true; $("bar").hidden = true;
+    $("gateMsg").textContent = getKey() ? "That key was not accepted." : "This server needs an admin token (or an API key) to open the settings.";
+    return;
+  }
+  if (!res.ok) { banner("bad", `Could not load settings (${res.status}).`); return; }
+  $("gate").hidden = true; $("content").hidden = false;
+  state = await res.json();
+  render();
+}
+
+function banner(kind, text, list = []) {
+  const b = el("div", {className: "banner " + kind}, text);
+  if (list.length) b.append(el("ul", {}, list.map(t => el("li", {}, t))));
+  $("banners").append(b);
+}
+
+const effective = (name) => name in edits ? edits[name] : fieldMeta[name].value;
+const isDirty = () => Object.keys(edits).length + clears.size > 0;
+
+function renderBanners() {
+  $("banners").replaceChildren();
+  if (state.auth === "open") banner("warn", "Anyone who can reach this server can open this page and change these settings. Set an admin token under “API protection” to lock this page.");
+  if (state.persistence === "memory") banner("warn", "No database and no SETTINGS_OVERRIDES_FILE: changes apply now but are lost when the server restarts.");
+  if (state.readiness.errors.length) banner("bad", "Real mode cannot run yet:", state.readiness.errors);
+  if (state.readiness.warnings.length) banner("warn", "Heads up:", state.readiness.warnings);
+}
+
+function sourceLine(f) {
+  const line = el("div", {className: "src"});
+  if (f.locked) { line.append(el("span", {className: "tag env"}, "env"), " set in .env, cannot be changed here"); return line; }
+  const src = clears.has(f.name) ? "reset" : f.source;
+  line.append(el("span", {className: "tag " + (src === "reset" ? "default" : src)}, src === "ui" ? "this page" : src === "reset" ? "will reset" : src === "env" ? ".env" : "default"));
+  if (f.source === "ui" && !clears.has(f.name)) {
+    const b = el("button", {className: "link", type: "button"}, "revert to " + (f.kind === "secret" ? ".env" : ".env / default"));
+    b.onclick = () => { clears.add(f.name); delete edits[f.name]; render(); };
+    line.append(b);
+  } else if (clears.has(f.name)) {
+    const b = el("button", {className: "link", type: "button"}, "undo");
+    b.onclick = () => { clears.delete(f.name); render(); };
+    line.append(b);
+  }
+  return line;
+}
+
+function control(f) {
+  const name = f.name;
+  if (f.kind === "bool") {
+    const c = el("input", {type: "checkbox", checked: !!effective(name), disabled: f.locked});
+    c.onchange = () => { setEdit(name, c.checked); };
+    return c;
+  }
+  if (f.kind === "choice") {
+    const s = el("select", {disabled: f.locked}, f.choices.map(o => el("option", {value: o, selected: o === effective(name)}, o)));
+    s.onchange = () => setEdit(name, s.value);
+    s.className = name in edits ? "changed" : "";
+    return s;
+  }
+  if (f.kind === "secret") {
+    const typed = edits[name] ?? "";
+    const i = el("input", {type: "password", autocomplete: "new-password", value: typed, disabled: f.locked,
+      placeholder: clears.has(name) ? "will revert to .env" : f.is_set ? "set. Type a new value to replace it" : "not set"});
+    i.oninput = () => { if (i.value) setEdit(name, i.value, true); else { delete edits[name]; i.classList.remove("changed"); updateBar(); } };
+    i.className = typed ? "changed" : "";
+    return i;
+  }
+  const num = f.kind === "int" || f.kind === "float";
+  const i = el("input", {type: num ? "number" : "text", value: effective(name) ?? "", disabled: f.locked, placeholder: f.placeholder || ""});
+  if (num) { i.step = f.kind === "int" ? "1" : "any"; if (f.min !== null) i.min = f.min; if (f.max !== null) i.max = f.max; }
+  i.oninput = () => {
+    if (num && i.value === "") { delete edits[name]; i.classList.remove("changed"); updateBar(); return; }
+    setEdit(name, num ? Number(i.value) : i.value);
+  };
+  i.className = name in edits ? "changed" : "";
+  return i;
+}
+
+function setEdit(name, v, secret = false) {
+  const f = fieldMeta[name];
+  clears.delete(name);
+  if (!secret && v === f.value) delete edits[name]; else edits[name] = v;
+  if (name === "mock_mode") { render(); return; }
+  const input = document.querySelector(`[data-f="${name}"] input:not([type=checkbox]), [data-f="${name}"] select`);
+  if (input) input.classList.toggle("changed", name in edits);
+  updateBar();
+}
+
+function fieldRow(f) {
+  const row = el("div", {className: "field"});
+  row.dataset.f = f.name;
+  const left = el("div", {}, el("label", {}, f.label));
+  if (f.help) left.append(el("div", {className: "help"}, f.help));
+  left.append(sourceLine(f));
+  const right = el("div", {}, control(f), el("div", {className: "ferr", hidden: true}));
+  row.append(left, right);
+  return row;
+}
+
+function render() {
+  fieldMeta = {};
+  state.groups.forEach(g => g.fields.forEach(f => fieldMeta[f.name] = f));
+  renderBanners();
+  const mock = !!effective("mock_mode");
+  $("modeMock").classList.toggle("on", mock); $("modeReal").classList.toggle("on", !mock);
+  $("modeMock").querySelector(".now").hidden = !state.mock_mode;
+  $("modeReal").querySelector(".now").hidden = state.mock_mode;
+  const modeGroup = state.groups.find(g => g.id === "mode");
+  $("modeFields").replaceChildren(...modeGroup.fields.filter(f => f.name !== "mock_mode").map(fieldRow));
+  const root = $("groups"); root.replaceChildren();
+  state.groups.filter(g => g.id !== "mode").forEach(g => {
+    const real = g.id === "keys" || g.id === "providers";
+    const p = el("section", {className: "panel" + (real && mock ? " dim" : "")});
+    p.append(el("h2", {}, g.title + (real && mock ? " (real mode only)" : "")));
+    if (g.description) p.append(el("p", {className: "desc"}, g.description));
+    p.append(el("div", {className: "fields"}, g.fields.map(fieldRow)));
+    root.append(p);
+  });
+  updateBar();
+}
+
+function updateBar() {
+  const n = Object.keys(edits).length + clears.size;
+  $("bar").hidden = n === 0 || $("content").hidden;
+  $("count").textContent = n === 1 ? "1 unsaved change" : `${n} unsaved changes`;
+}
+
+$("modeMock").onclick = () => setEdit("mock_mode", true);
+$("modeReal").onclick = () => setEdit("mock_mode", false);
+$("discard").onclick = () => { Object.keys(edits).forEach(k => delete edits[k]); clears.clear(); render(); };
+
+$("save").onclick = async () => {
+  $("save").disabled = true;
+  document.querySelectorAll(".ferr").forEach(e => e.hidden = true);
+  document.querySelectorAll(".invalid").forEach(e => e.classList.remove("invalid"));
+  try {
+    const res = await fetch("/api/settings", {method: "PUT", headers: headers(true),
+      body: JSON.stringify({values: edits, clear: [...clears]})});
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401) { await load(); return; }
+    if (res.status === 422) {
+      const errs = (body.detail && body.detail.errors) || {};
+      const general = [];
+      for (const [name, msg] of Object.entries(errs)) {
+        const row = document.querySelector(`[data-f="${name}"]`);
+        if (row) { const fe = row.querySelector(".ferr"); fe.textContent = msg; fe.hidden = false;
+          row.querySelector("input:not([type=checkbox]), select")?.classList.add("invalid"); }
+        else general.push(name ? `${name}: ${msg}` : msg);
+      }
+      renderBanners();
+      banner("bad", "Not applied. The running configuration is unchanged.", general.length ? general : []);
+      window.scrollTo({top: 0, behavior: "smooth"});
+      return;
+    }
+    if (!res.ok) { renderBanners(); banner("bad", `Save failed (${res.status}).`); return; }
+    if (edits.admin_token) setKey(edits.admin_token);
+    Object.keys(edits).forEach(k => delete edits[k]); clears.clear();
+    state = body; render();
+    banner("ok", "Saved and applied.");
+    window.scrollTo({top: 0, behavior: "smooth"});
+  } finally {
+    $("save").disabled = false;
+  }
+};
+
+$("unlock").onclick = () => { setKey($("access").value.trim()); load(); };
+$("access").addEventListener("keydown", (e) => { if (e.key === "Enter") $("unlock").click(); });
+window.addEventListener("beforeunload", (e) => { if (isDirty()) { e.preventDefault(); e.returnValue = ""; } });
+load();
+</script>
+</body>
+</html>

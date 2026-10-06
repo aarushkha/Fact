@@ -45,6 +45,7 @@ class Tables:
     claims: Table
     verdicts: Table
     rate_limit_hits: Table
+    settings_overrides: Table
     dim: int
 
 
@@ -162,7 +163,17 @@ def build_tables(dim: int) -> Tables:
         Column("at", tz, server_default=func.now(), nullable=False),
         Index("ix_rate_limit_hits_identity_at", "identity", "at"),
     )
-    return Tables(md, sources, documents, passages, checks, stage_runs, claims, verdicts, rate_limit_hits, dim)
+    # Settings changed from the web page; they win over the environment / .env and are read by the app and the worker.
+    settings_overrides = Table(
+        "settings_overrides", md,
+        Column("key", Text, primary_key=True),
+        Column("value", JSONB(none_as_null=True), nullable=False),
+        Column("updated_at", tz, server_default=func.now(), nullable=False),
+    )
+    return Tables(
+        md, sources, documents, passages, checks, stage_runs, claims, verdicts, rate_limit_hits,
+        settings_overrides, dim,
+    )
 
 
 def make_engine(database_url: str) -> AsyncEngine:
