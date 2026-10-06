@@ -6,3 +6,9 @@ __pycache__/
 *.egg-info/
 eval/out/
 .settings-overrides.json
+
+# model benchmarks: fetched articles, vectors, API caches and logs stay local
+bench/data/*
+!bench/data/not_checkable.jsonl
+bench/cache/
+bench_*.log
